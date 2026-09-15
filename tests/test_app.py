@@ -20,8 +20,9 @@ def workspace(**changes):
     return value
 
 
-def sso(identity='alice', name='张三'):
-    return [(b'Decrypted-Userinfo', json.dumps({'userId': identity, 'name': name}, ensure_ascii=False).encode('utf-8'))]
+def sso(identity='alice', name='张三', avatar=''):
+    return [(b'Decrypted-Userinfo', json.dumps({'userId': identity, 'displayName': name, 'avatar': avatar,
+        'name': identity, 'email': identity + '@example.invalid', 'emailAlias': identity}, ensure_ascii=False).encode('utf-8'))]
 
 
 class FakeResult:
@@ -76,19 +77,27 @@ class FakeDatabase:
 
 class AuthUnitTests(unittest.TestCase):
     def test_header_utf8_and_already_decoded_chinese(self):
-        encoded = json.dumps({'userId': 123, 'name': '张三'}, ensure_ascii=False)
+        expected = {'userId': '123', 'displayName': '张三', 'name': 'zhangsan',
+                    'email': 'zhangsan@example.invalid', 'emailAlias': 'zhangsan', 'avatar': ''}
+        encoded = json.dumps(expected, ensure_ascii=False)
         mojibake = encoded.encode('utf-8').decode('latin-1')
-        expected = {'userId': '123', 'username': '张三', 'email': ''}
+        self.assertEqual(mojibake.encode('latin-1').decode('utf-8'), encoded)
         self.assertEqual(backend._parse_sso_user(encoded), expected)
         self.assertEqual(backend._parse_sso_user(mojibake), expected)
 
-    def test_email_identity_fallback_and_escaped_json(self):
-        self.assertEqual(backend._parse_sso_user(json.dumps({'email': 'a@example.invalid', 'name': '李四'}))['userId'], 'a@example.invalid')
+    def test_only_contract_fields_are_used_and_escaped_json_is_supported(self):
+        user = backend._parse_sso_user(json.dumps({'userId': 'alice', 'displayName': '李四',
+            'id': 'bob', 'username': 'wrong', 'workEmail': 'wrong@example.invalid', 'hrUserId': 'wrong'}))
+        self.assertEqual(user, {'userId': 'alice', 'displayName': '李四', 'avatar': '', 'email': '', 'name': '', 'emailAlias': ''})
+        for identity in [{'email': 'a@example.invalid'}, {'id': 'alice'}, {'workEmail': 'a@example.invalid'}]:
+            self.assertIsNone(backend._parse_sso_user(json.dumps({**identity, 'displayName': '李四'})))
 
     def test_malformed_or_ambiguous_identity_is_not_authenticated(self):
         for value in [None, '', 'not-json', '[]', '{}', '{"name":"Nobody"}', '{"userId":true}',
                       '{"userId":{}}', '{"userId":[]}', '{"userId":"  "}', '{"userId":"a\\n"}',
-                      '{"userId":"alice","name":{}}']:
+                      '{"userId":"alice","name":{}}', '{"userId":"alice","displayName":{}}',
+                      '{"userId":"alice","displayName":""}', '{"userId":123,"displayName":"Alice"}',
+                      '{"userId":"alice","displayName":"Alice","avatar":[]}']:
             with self.subTest(value=value):
                 self.assertIsNone(backend._parse_sso_user(value))
                 with self.assertRaises(HTTPException) as error:
@@ -108,7 +117,7 @@ class WorkspaceASGITests(unittest.IsolatedAsyncioTestCase):
         self.db_patch.stop()
 
     async def test_anonymous_requests_fail_before_database_or_upstream_access(self):
-        requests = [('GET', '/', None), ('GET', '/api/whoami', None), ('GET', '/api/workspace', None),
+        requests = [('GET', '/', None), ('GET', '/api/session/me', None), ('GET', '/api/workspace', None),
                     ('PUT', '/api/workspace', workspace()),
                     ('GET', '/api/market/bars?symbol=sh600000&start=2024-01-02&end=2024-01-05', None),
                     ('GET', '/api/market/quote?symbol=sh600000', None), ('GET', '/api/market/search?q=test', None)]
@@ -119,10 +128,20 @@ class WorkspaceASGITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.database.calls, [])
 
     async def test_chinese_gateway_header_is_decoded_and_identity_response_is_not_cacheable(self):
-        response = await self.client.get('/api/whoami', headers=sso())
+        response = await self.client.get('/api/session/me', headers=sso())
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['name'], '张三')
+        self.assertEqual(response.json(), {'userId': 'alice', 'displayName': '张三', 'avatar': ''})
         self.assertEqual(response.headers['cache-control'], 'no-store')
+        self.assertNotIn('set-cookie', response.headers)
+
+    async def test_session_reflects_current_header_and_rejects_malformed_identity(self):
+        avatar = 'https://example.invalid/avatar.png'
+        response = await self.client.get('/api/session/me', headers=sso(name='李四', avatar=avatar))
+        self.assertEqual(response.json(), {'userId': 'alice', 'displayName': '李四', 'avatar': avatar})
+        for raw in ['not-json', '[]', '{"email":"alice@example.invalid","displayName":"Alice"}']:
+            response = await self.client.get('/api/session/me', headers={'Decrypted-Userinfo': raw})
+            self.assertEqual(response.status_code, 401)
+        self.assertEqual(self.database.calls, [])
 
     async def test_owner_is_taken_only_from_authenticated_header(self):
         alice = await self.client.put('/api/workspace', headers=sso('alice'), json=workspace(owner_id='bob', userId='bob'))
@@ -342,7 +361,7 @@ class MarketProviderTests(unittest.IsolatedAsyncioTestCase):
         client = MockMarketClient([MockResponse(content=('v="' + '~'.join(parts) + '";').encode('gb18030'))])
         with patch.object(backend.httpx, 'AsyncClient', return_value=client):
             with self.assertRaises(HTTPException) as error:
-                await backend.quote('sh600000', json.dumps({'userId': 'alice'}))
+                await backend.quote('sh600000', json.dumps({'userId': 'alice', 'displayName': '张三'}))
         self.assertEqual(error.exception.status_code, 502)
 
 

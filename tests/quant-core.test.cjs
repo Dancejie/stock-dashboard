@@ -191,13 +191,17 @@ test('condition-plan adapter copies real newlines and only the selected strategy
   const start=source.indexOf('  function buildPlan('),end=source.indexOf('\n  async function copyPlan()',start);
   assert(start>=0&&end>start);
   const output={innerHTML:''},button={};
-  const context={StockQuant:Q,quoteNow:null,S:{ohlcv:bars([10,10,10,9,12]),name:'Example',code:'600000'},lastPlan:null,
+  const context={StockQuant:Q,quoteNow:{quoteDate:date(4),quoteTime:date(4)+' 15:00:00'},S:{ohlcv:bars([10,10,10,9,12]),name:'Example',code:'600000'},lastPlan:null,
     document:{getElementById:id=>id==='orderDraftOutput'?output:button},val:()=>10000,params:()=>({shortN:2,longN:3}),config:()=>free,
     labels:{ma:'双均线'},clean:String,num:n=>Number(n).toFixed(2),copyPlan:()=>{}};
   vm.createContext(context);vm.runInContext(source.slice(start,end),context);context.buildPlan('ma',{});
   assert(context.lastPlan.includes('\n'));assert(!context.lastPlan.includes('\\n'));
   assert(context.lastPlan.includes('95%'));assert(!context.lastPlan.includes('均值回归'));
   assert(!output.innerHTML.includes('NaN'));assert(output.innerHTML.includes('9500.00'));assert.equal(typeof button.onclick,'function');
+  context.quoteNow=null;context.buildPlan('ma',{});
+  assert(output.innerHTML.includes('报价时间不可核实，暂不启用本条'));assert(!output.innerHTML.includes('9500.00'));
+  context.quoteNow={quoteDate:date(5),quoteTime:date(5)+' 09:31:00'};context.buildPlan('ma',{});
+  assert(output.innerHTML.includes('对应开盘已过，不启用本条'));assert(!output.innerHTML.includes('9500.00'));
 });
 
 function supertrendFixture() {

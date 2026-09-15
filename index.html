@@ -4,8 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>交易看板</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/lightweight-charts@4.1.7/dist/lightweight-charts.standalone.production.js"></script>
+<script src="./lightweight-charts-4.1.7.js"></script>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 :root {
@@ -667,8 +666,8 @@ body {
   #updateTime { order: 2; }
 }
 </style>
-<link rel="stylesheet" href="workspace-ui.css">
-<link rel="stylesheet" href="dashboard-upgrade.css">
+<link rel="stylesheet" href="./workspace-ui.css">
+<link rel="stylesheet" href="./dashboard-upgrade.css">
 </head>
 <body>
 <div id="app">
@@ -918,7 +917,7 @@ body {
               <div class="bt-field"><label for="btSTPeriod">ATR周期</label><input type="number" id="btSTPeriod" value="10" min="2" max="1000" step="1"></div>
               <div class="bt-field"><label for="btSTMult">ATR倍数</label><input type="number" id="btSTMult" value="3" min="0.1" max="20" step="0.1"></div>
             </div>
-            <div class="strat-hint">默认 ATR(10) × 3。趋势翻多后买入，翻空后退出；只做多，收盘确认后次日开盘尝试成交。参考 <a href="https://www.tradingview.com/support/solutions/43000634738-supertrend/" target="_blank" rel="noopener noreferrer">TradingView 超级趋势定义</a>；默认参数未证明对 A 股有效。</div>
+            <div class="strat-hint">默认 ATR(10) × 3。趋势翻多后买入，翻空后退出；只做多，收盘确认后次日开盘尝试成交。参考 TradingView 超级趋势定义；默认参数未证明对 A 股有效。</div>
           </div>
           <div class="strat-param-group" id="paramGroup-tsmom" style="display:none">
             <div class="bt-row">
@@ -929,7 +928,7 @@ body {
               <div class="bt-field"><label for="btMomTargetVol">目标年化波动率 (%)</label><input type="number" id="btMomTargetVol" value="15" min="0.1" max="100" step="0.1"></div>
               <div class="bt-field"><label for="btMomMaxAllocation">最大仓位 (%)</label><input type="number" id="btMomMaxAllocation" value="95" min="1" max="100" step="1"></div>
             </div>
-            <div class="strat-hint">默认回看126日、估计20日波动率、入场目标年化波动15%、仓位上限95%。正动量时按波动率确定初始仓位，动量非正时离场；持仓期间不持续再平衡，目标波动不是实际波动保证。只做多，收盘确认后次日开盘尝试成交。思想参考 <a href="https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum" target="_blank" rel="noopener noreferrer">AQR 时间序列动量</a>与<a href="https://www.nber.org/papers/w22208" target="_blank" rel="noopener noreferrer">波动率管理研究</a>。跨资产期货研究不是 A 股有效性证明，本实现也不是论文公式复刻。</div>
+            <div class="strat-hint">默认回看126日、估计20日波动率、入场目标年化波动15%、仓位上限95%。正动量时按波动率确定初始仓位，动量非正时离场；持仓期间不持续再平衡，目标波动不是实际波动保证。只做多，收盘确认后次日开盘尝试成交。思想参考 AQR 时间序列动量与波动率管理研究。跨资产期货研究不是 A 股有效性证明，本实现也不是论文公式复刻。</div>
           </div>
           <div class="strat-param-group" id="paramGroup-chandelier" style="display:none">
             <div class="bt-row">
@@ -940,7 +939,7 @@ body {
               <div class="bt-field"><label for="btCEMult">止损ATR倍数</label><input type="number" id="btCEMult" value="3" min="0.1" max="20" step="0.1"></div>
               <div class="bt-field"><label for="btCERisk">建仓风险预算 (%)</label><input type="number" id="btCERisk" value="1" min="0.01" max="100" step="0.1"></div>
             </div>
-            <div class="strat-hint">默认55日突破入场、ATR(22) × 3跟踪、1%建仓风险预算。参考 <a href="https://www.tradingview.com/support/solutions/43000773013-chandelier-exit/" target="_blank" rel="noopener noreferrer">Chandelier Exit</a>；本项目改为持仓以来最高价与只上移的止损，并加突破入场，属于工程改编。只做多、收盘确认次日开盘执行；跳空可能使损失超过风险预算，尚未证明 A 股有效。</div>
+            <div class="strat-hint">默认55日突破入场、ATR(22) × 3跟踪、1%建仓风险预算。参考 Chandelier Exit；本项目改为持仓以来最高价与只上移的止损，并加突破入场，属于工程改编。只做多、收盘确认次日开盘执行；跳空可能使损失超过风险预算，尚未证明 A 股有效。</div>
           </div>
           <!-- 全部对比：each strategy retains its own parameters -->
           <div class="strat-param-group" id="paramGroup-all" style="display:none">
@@ -2076,9 +2075,11 @@ $('#btRun').addEventListener('click', () => window.StockApp.backtest());
 // ═══════════════════════════════════════════════════════════════
 
 </script>
-<script src="quant-core.js"></script>
-<script src="portfolio-engine.js"></script>
-<script src="workspace-ui.js"></script>
-<script src="dashboard-upgrade.js"></script>
+<script src="./quant-core.js"></script>
+<script src="./portfolio-engine.js"></script>
+<script src="./workspace-ui.js"></script>
+<script src="./market-client.js"></script>
+<script src="./market-search.js"></script>
+<script src="./dashboard-upgrade.js"></script>
 </body>
 </html>

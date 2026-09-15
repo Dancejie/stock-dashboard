@@ -19,11 +19,11 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from init_db import SCHEMA, load_db_props
 
-VERSION = '2026.09.15-portfolio.1'
+VERSION = '2026.09.15-strategies.4'
 ROOT = Path(__file__).resolve().parent
 CN = ZoneInfo('Asia/Shanghai')
 SYMBOL = re.compile(r'^(sh|sz)\d{6}$')
-app = FastAPI(title='交易看板', docs_url=None, redoc_url=None)
+app = FastAPI(title='交易看板', docs_url=None, redoc_url=None, redirect_slashes=False)
 
 def _get_db_conn():
     p = load_db_props('db.properties')
@@ -39,23 +39,21 @@ def _parse_sso_user(decrypted_userinfo: Optional[str]):
         # ASGI headers are latin-1 decoded; direct calls may already contain Unicode.
         try:
             fixed = decrypted_userinfo.encode('latin-1').decode('utf-8')
-        except UnicodeError:
+        except (UnicodeEncodeError, UnicodeDecodeError):
             fixed = decrypted_userinfo
         data = json.loads(fixed)
         if not isinstance(data, dict):
             return None
-        ident = next((data.get(key) for key in ['userId', 'id', 'email', 'workEmail'] if data.get(key) not in (None, '')), None)
-        if isinstance(ident, bool) or not isinstance(ident, (str, int)) or not str(ident).strip() or len(str(ident)) > 320:
+        user = {key: data.get(key, '') for key in ['avatar', 'displayName', 'email', 'userId', 'name', 'emailAlias']}
+        if any(not isinstance(value, str) for value in user.values()):
             return None
-        if any(ord(char) < 32 for char in str(ident)):
+        if not user['userId'].strip() or not user['displayName'].strip():
             return None
-        if any(data.get(key) is not None and not isinstance(data.get(key), str) for key in ['username', 'name', 'displayName', 'email', 'workEmail']):
+        if any(ord(char) < 32 for char in user['userId']):
             return None
-        username = data.get('username') or data.get('name') or data.get('displayName') or ''
-        email = data.get('email') or data.get('workEmail') or ''
-        if not isinstance(username, str) or not isinstance(email, str) or len(username) > 320 or len(email) > 320:
+        if any(len(user[key]) > 320 for key in ['userId', 'displayName', 'name', 'email']):
             return None
-        return {'userId': str(ident).strip(), 'username': username, 'email': email}
+        return user
     except (ValueError, UnicodeError, AttributeError):
         return None
 
@@ -69,7 +67,7 @@ def _provision(conn, user):
     conn.execute(SCHEMA)
     conn.execute('INSERT INTO stock_users (owner_id, email, username) VALUES (%s,%s,%s) '
         'ON CONFLICT (owner_id) DO UPDATE SET email=EXCLUDED.email, username=EXCLUDED.username',
-        (user['userId'], user['email'], user['username']))
+        (user['userId'], user['email'], user['name']))
     conn.execute('INSERT INTO stock_workspaces (owner_id) VALUES (%s) ON CONFLICT (owner_id) DO NOTHING', (user['userId'],))
 
 def _symbol(value):
@@ -179,10 +177,10 @@ def _dates(start, end, max_years=10):
 def health():
     return {'ok': True, 'version': VERSION}
 
-@app.get('/api/whoami')
-def whoami(decrypted_userinfo: Optional[str] = Header(None, alias='Decrypted-Userinfo')):
+@app.get('/api/session/me')
+def me(decrypted_userinfo: Optional[str] = Header(None, alias='Decrypted-Userinfo')):
     user = _require_user(decrypted_userinfo)
-    return JSONResponse({'name': user['username'], 'version': VERSION}, headers={'Cache-Control': 'no-store'})
+    return JSONResponse({key: user[key] for key in ['userId', 'displayName', 'avatar']}, headers={'Cache-Control': 'no-store'})
 
 @app.get('/api/workspace')
 def get_workspace(decrypted_userinfo: Optional[str] = Header(None, alias='Decrypted-Userinfo')):
@@ -349,6 +347,6 @@ def index(decrypted_userinfo: Optional[str] = Header(None, alias='Decrypted-User
 
 @app.get('/{asset}')
 def asset_file(asset: str):
-    if asset not in ['quant-core.js','portfolio-engine.js','workspace-ui.js','workspace-ui.css','dashboard-upgrade.js','dashboard-upgrade.css']:
+    if asset not in ['market-client.js','market-search.js','lightweight-charts-4.1.7.js','quant-core.js','portfolio-engine.js','workspace-ui.js','workspace-ui.css','dashboard-upgrade.js','dashboard-upgrade.css']:
         raise HTTPException(404)
     return FileResponse(ROOT/asset, headers={'Cache-Control':'no-cache'})

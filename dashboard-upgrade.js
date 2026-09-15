@@ -20,7 +20,7 @@
   async function getBars(symbol,start,end,adjust='qfq') {
     const key=[symbol,start,end,adjust].join('|'), old=cache.get(key);
     if (old && Date.now()-old.time<60000) return old.data;
-    const result=await api('/api/market/bars?'+new URLSearchParams({symbol,start,end,adjust}));
+    const result=await StockMarket.getBars(symbol,start,end,adjust);
     result.meta.adjustment=result.meta.adjust;
     cache.set(key,{time:Date.now(),data:result});
     return result;
@@ -61,7 +61,7 @@
       <p class="audit-note">同标的买入持有（价格收益、未扣费用）：${pct(r.buyAndHold)}；开放仓位按期末收盘估值，未计作已完成交易。</p>
       <details><summary>成交记录与执行假设（${r.fills.length}次成交）</summary><div class="audit-table-scroll"><table class="audit-table"><thead><tr><th>信号日</th><th>成交日</th><th>方向</th><th>价格</th><th>股数</th><th>费用</th></tr></thead><tbody>${r.fills.slice(-120).map(t=>`<tr><td>${clean(t.signalDate||'初始配置')}</td><td>${clean(t.time||t.date)}</td><td>${t.side==='buy'?'买入':'卖出'}</td><td>${num(t.price)}</td><td>${clean(t.qty)}</td><td>${num(t.fee??t.fees)}</td></tr>`).join('')||'<tr><td colspan="6">该区间没有成交</td></tr>'}</tbody></table></div><ul>${r.warnings.map(w=>`<li>${clean(w)}</li>`).join('')}</ul></details></section>`;
   }
-  function alphaHTML(result,benchmark,rf) {
+  function alphaHTML(result,benchmark,rf,strategyLabel) {
     const map=new Map(benchmark.map(b=>[b.time,b.close]));let pairs=[];
     for(let i=1;i<result.equity.length;i++) {
       const a=result.equity[i-1],b=result.equity[i],p=map.get(a.time),q=map.get(b.time);
@@ -74,7 +74,7 @@
     if(!(vx>0&&vy>0))return '<p class="audit-note">样本方差不足，Alpha/Beta不适用。</p>';
     const beta=cov/vx,alpha=(my-beta*mx)*252,rho=cov/Math.sqrt(vx*vy),active=pairs.map(p=>p[0]-p[1]),am=active.reduce((a,b)=>a+b,0)/n;
     const te=Math.sqrt(active.reduce((s,v)=>s+(v-am)**2,0)/(n-1))*Math.sqrt(252),vol=Math.sqrt(vy*252);
-    return `<section class="verified-result"><h3>相对基准表现</h3><div class="audit-metrics">${[['Alpha 点估计',pct(alpha*100)],['Beta',num(beta,3)],['策略年化波动',pct(vol*100)],['R²',num(rho*rho*100,1)+'%'],['跟踪误差',pct(te*100)],['信息比率',te?num(am*252/te,3):'—']].map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div><p class="audit-note">${n}个对齐日收益样本；日超额收益 OLS、Alpha按252倍年化。无风险收益假设${num(rf*100)}%/年。点估计未做显著性检验；Beta衡量市场敏感度，不能代替波动与回撤。</p></section>`;
+    return `<section class="verified-result"><h3>相对基准表现 · ${clean(strategyLabel)}</h3><div class="audit-metrics">${[['Alpha 点估计',pct(alpha*100)],['Beta',num(beta,3)],['策略年化波动',pct(vol*100)],['R²',num(rho*rho*100,1)+'%'],['跟踪误差',pct(te*100)],['信息比率',te?num(am*252/te,3):'—']].map(x=>`<div><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}</div><p class="audit-note">${n}个对齐日收益样本；日超额收益 OLS、Alpha按252倍年化。无风险收益假设${num(rf*100)}%/年。点估计未做显著性检验；Beta衡量市场敏感度，不能代替波动与回撤。</p></section>`;
   }
   async function backtest() {
     const btn=document.getElementById('btRun'),version=requestVersion,symbol=S.sinaSymbol,calculation=++calculationVersion;
@@ -100,10 +100,10 @@
       const benchmarkSymbol=document.getElementById('btBenchmark').value;
       try {
         const bm=await getBars(benchmarkSymbol,start,end,'raw');
-        if(valid())target.insertAdjacentHTML('beforeend',alphaHTML(r,bm.bars,options.riskFreeRate));
+        if(valid())target.insertAdjacentHTML('beforeend',alphaHTML(r,bm.bars,options.riskFreeRate,labels[keys[0]]));
       }catch(e){if(valid())target.insertAdjacentHTML('beforeend',`<p class="audit-note">基准数据未完成：${clean(e.message)}</p>`);}
       if(!valid())return;
-      if(r.equity.length>=90)target.insertAdjacentHTML('beforeend','<button type="button" id="runValidation" class="audit-button">运行独立滚动验证</button><div id="validationResult"></div>');
+      if(r.equity.length>=90)target.insertAdjacentHTML('beforeend','<button type="button" id="runValidation" class="audit-button">运行 '+clean(labels[keys[0]])+' 独立滚动验证</button><div id="validationResult"></div>');
       document.getElementById('runValidation')?.addEventListener('click',()=>runValidation(pack.bars.filter(b=>b.time>=start&&b.time<=end),keys[0],frozenParams[keys[0]],options,version));
       renderPlan();
     }catch(e){if(valid())target.innerHTML=`<p class="audit-error">${clean(e.message)}</p>`;}
@@ -115,9 +115,9 @@
       await new Promise(r=>setTimeout(r,20));
       const r=StockPortfolio.walkForward(data,key,p,{executionOptions:options});
       if(version!==requestVersion)return;
-      el.innerHTML=`<h4>滚动样本外诊断</h4><p class="audit-note">${r.optimized?'网格参数仅在训练期寻优并冻结。':'当前策略使用界面固定参数，未自动寻优。'}验证窗口各自从现金开始；区间末尾尚有${r.trailingUntestedBars}根日线未组成完整验证窗。</p><div class="audit-table-scroll"><table class="audit-table"><thead><tr><th>训练期</th><th>验证期</th><th>候选数</th><th>训练收益</th><th>验证收益</th><th>验证交易数</th></tr></thead><tbody>${r.windows.map(w=>`<tr><td>${clean(w.trainStart)} → ${clean(w.trainEnd)}</td><td>${clean(w.testStart)} → ${clean(w.testEnd)}</td><td>${w.candidateCount}</td><td>${pct(w.trainReturn)}</td><td>${pct(w.testReturn)}</td><td>${w.testTrades}</td></tr>`).join('')}</tbody></table></div>${r.caveats.map(x=>`<p class="audit-note">${clean(x)}</p>`).join('')}`;
+      el.innerHTML=`<h4>${clean(labels[key])} · 滚动样本外诊断</h4><p class="audit-note">${r.optimized?'网格参数仅在训练期寻优并冻结。':'当前策略使用界面固定参数，未自动寻优。'}验证窗口各自从现金开始；区间末尾尚有${r.trailingUntestedBars}根日线未组成完整验证窗。</p><div class="audit-table-scroll"><table class="audit-table"><thead><tr><th>训练期</th><th>验证期</th><th>候选数</th><th>训练收益</th><th>验证收益</th><th>验证交易数</th></tr></thead><tbody>${r.windows.map(w=>`<tr><td>${clean(w.trainStart)} → ${clean(w.trainEnd)}</td><td>${clean(w.testStart)} → ${clean(w.testEnd)}</td><td>${w.candidateCount}</td><td>${pct(w.trainReturn)}</td><td>${pct(w.testReturn)}</td><td>${w.testTrades}</td></tr>`).join('')}</tbody></table></div>${r.caveats.map(x=>`<p class="audit-note">${clean(x)}</p>`).join('')}`;
     }catch(e){el.innerHTML=`<p class="audit-error">${clean(e.message)}</p>`;}
-    finally{btn.disabled=false;btn.textContent='运行独立滚动验证';}
+    finally{btn.disabled=false;btn.textContent='运行 '+labels[key]+' 独立滚动验证';}
   }
   function renderPlan() {
     let el=document.getElementById('orderPlanSection');
@@ -149,7 +149,9 @@
       if(key==='chandelier'&&position.quantity>0){position.entryDate=document.getElementById('planEntryDate').value;position.highestHigh=val('planHighestHigh',NaN);position.previousStop=val('planPreviousStop',NaN);}
       const plan=StockQuant.plan(S.planData||S.ohlcv,key,params(key),position,config());
       const quotedDay=quoteNow?.quoteDate||quoteNow?.quoteTime?.slice(0,10),quotedTime=quoteNow?.quoteTime?.slice(11,16);
-      const expired=quotedDay>plan.asOf&&quotedTime>='09:30';
+      const timingUnverified=!quotedDay||!quotedTime;
+      const expired=!timingUnverified&&quotedDay>plan.asOf&&quotedTime>='09:30';
+      if(timingUnverified)plan.warnings.unshift('最新报价时间不可核实，无法确认该日线信号是否仍在下一次开盘前。以下仅供复核，暂不启用委托；请更新行情后核对。');
       if(expired)plan.warnings.unshift('最新报价已进入信号日之后的交易时段，该信号的次日开盘已经过去。以下仅供复核，不是待执行委托；继续按规则等待新的收盘信号。');
       if(key==='grid'){
         const p=plan.params,base=plan.currentState.base;
@@ -161,7 +163,7 @@
       const rows=plan.orders.map(order=>{
         const label=reasonLabels[order.reason]||order.reason;
         const condition=`${plan.asOf} 收盘已确认：${label}`;
-        const action=expired?'对应开盘已过，不启用本条；等待新信号。':!order.enabled?'当前资金或可卖数量不足，本条不启用。':order.side==='buy'
+        const action=timingUnverified?'报价时间不可核实，暂不启用本条；更新行情后重新核对。':expired?'对应开盘已过，不启用本条；等待新信号。':!order.enabled?'当前资金或可卖数量不足，本条不启用。':order.side==='buy'
           ?`下一交易日开盘尝试买入；该档金额不得超过${num(order.budget)}元（含费用）${order.quantityCap!=null?'，策略数量上限'+order.quantityCap+'股':''}，按当前参考价估算${order.qty}股。开盘重新按剩余预算及实际价向下取整。`
           :`下一交易日开盘尝试卖出${order.qty}股；已顺序扣减当前可卖余额，执行前再次核对。`;
         return {condition,action};
@@ -181,7 +183,7 @@
     document.getElementById('btResults').innerHTML='';document.getElementById('orderPlanSection')?.remove();
     try{
       const range=datesForRange(S.range||'1y');
-      const [pack,q]=await Promise.all([getBars(symbol,warmStart(range.start),range.end,'qfq'),api('/api/market/quote?symbol='+encodeURIComponent(symbol)).catch(()=>null)]);
+      const [pack,q]=await Promise.all([getBars(symbol,warmStart(range.start),range.end,'qfq'),StockMarket.getQuote(symbol).catch(()=>null)]);
       if(version!==requestVersion)return;
       S.planData=pack.bars;S.ohlcv=pack.bars.filter(b=>b.time>=range.start);if(!S.ohlcv.length)throw new Error('所选区间没有可用日线');S._btData=null;S._btParams=null;quoteNow=q;if(q?.name)S.name=q.name;
       createMainChart();updateMainChart(S.ohlcv);S.charts.main.timeScale().fitContent();initDefaultMAs();updateStockInfo(S.ohlcv,q);
@@ -210,9 +212,9 @@
   // The original chart/search interface remains in place; these adapters supply its data.
   window.loadStock=load;
   window.fetchKline=async(symbol,range)=>{const d=datesForRange(range||'1y');return (await getBars(symbol,d.start,d.end,'qfq')).bars;};
-  window.fetchQuote=()=>api('/api/market/quote?symbol='+encodeURIComponent(S.sinaSymbol));
+  window.fetchQuote=()=>StockMarket.getQuote(S.sinaSymbol);
   window.searchStocks=async keyword=>{
-    let items=[];try{items=(await api('/api/market/search?q='+encodeURIComponent(keyword))).items;}catch(e){if(!/^\d{6}$/.test(keyword))throw e;}
+    let items=[];try{items=(await StockMarketSearch.search(keyword)).items;}catch(e){if(!/^\d{6}$/.test(keyword))throw e;}
     const mapped=items.map(x=>({code:x.Code,name:x.Name,mktNum:String(x.MktNum),secid:String(x.MktNum)+'.'+x.Code,market:'A',marketLabel:String(x.MktNum)==='1'?'沪市':'深市'}));
     if(!mapped.length&&/^\d{6}$/.test(keyword)){const market=/^[569]/.test(keyword)?'1':'0';mapped.push({code:keyword,name:keyword,mktNum:market,secid:market+'.'+keyword,market:'A'});}
     return mapped;
