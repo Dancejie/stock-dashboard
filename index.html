@@ -392,8 +392,8 @@ body {
   flex-wrap: wrap;
 }
 .strat-card {
-  flex: 1;
-  min-width: 80px;
+  flex: 1 1 104px;
+  min-width: 100px;
   background: var(--bg-primary);
   border: 1.5px solid var(--border);
   border-radius: 8px;
@@ -782,10 +782,25 @@ body {
             <div class="strat-name">TD序列</div>
             <div class="strat-desc">9/13反转信号，K线标注计数</div>
           </div>
+          <div class="strat-card" data-strat="supertrend" onclick="selectStrategy(this,'supertrend')">
+            <div class="strat-icon">↗</div>
+            <div class="strat-name">超级趋势</div>
+            <div class="strat-desc">ATR趋势翻转，做多或离场</div>
+          </div>
+          <div class="strat-card" data-strat="tsmom" onclick="selectStrategy(this,'tsmom')">
+            <div class="strat-icon">〰</div>
+            <div class="strat-name">波动率约束动量</div>
+            <div class="strat-desc">正动量入场，按波动率定初仓</div>
+          </div>
+          <div class="strat-card" data-strat="chandelier" onclick="selectStrategy(this,'chandelier')">
+            <div class="strat-icon">⌁</div>
+            <div class="strat-name">突破 + 吊灯止损</div>
+            <div class="strat-desc">55日突破，单调跟踪止损</div>
+          </div>
           <div class="strat-card" data-strat="all" onclick="selectStrategy(this,'all')">
             <div class="strat-icon">⚡</div>
             <div class="strat-name">全部对比</div>
-            <div class="strat-desc">同时跑5种策略，横向对比</div>
+            <div class="strat-desc">同时运行9种策略，横向对比</div>
           </div>
         </div>
 
@@ -898,9 +913,38 @@ body {
             </div>
             <div class="strat-hint" style="margin-top:4px">💡 每手=100股。下跌时每格买入，上涨时每格卖出，超出网格范围暂停。</div>
           </div>
-          <!-- 全部对比：no extra params -->
+          <div class="strat-param-group" id="paramGroup-supertrend" style="display:none">
+            <div class="bt-row">
+              <div class="bt-field"><label for="btSTPeriod">ATR周期</label><input type="number" id="btSTPeriod" value="10" min="2" max="1000" step="1"></div>
+              <div class="bt-field"><label for="btSTMult">ATR倍数</label><input type="number" id="btSTMult" value="3" min="0.1" max="20" step="0.1"></div>
+            </div>
+            <div class="strat-hint">默认 ATR(10) × 3。趋势翻多后买入，翻空后退出；只做多，收盘确认后次日开盘尝试成交。参考 <a href="https://www.tradingview.com/support/solutions/43000634738-supertrend/" target="_blank" rel="noopener noreferrer">TradingView 超级趋势定义</a>；默认参数未证明对 A 股有效。</div>
+          </div>
+          <div class="strat-param-group" id="paramGroup-tsmom" style="display:none">
+            <div class="bt-row">
+              <div class="bt-field"><label for="btMomLookback">动量回看交易日</label><input type="number" id="btMomLookback" value="126" min="2" max="2000" step="1"></div>
+              <div class="bt-field"><label for="btMomVolPeriod">波动率估计交易日</label><input type="number" id="btMomVolPeriod" value="20" min="2" max="1000" step="1"></div>
+            </div>
+            <div class="bt-row">
+              <div class="bt-field"><label for="btMomTargetVol">目标年化波动率 (%)</label><input type="number" id="btMomTargetVol" value="15" min="0.1" max="100" step="0.1"></div>
+              <div class="bt-field"><label for="btMomMaxAllocation">最大仓位 (%)</label><input type="number" id="btMomMaxAllocation" value="95" min="1" max="100" step="1"></div>
+            </div>
+            <div class="strat-hint">默认回看126日、估计20日波动率、入场目标年化波动15%、仓位上限95%。正动量时按波动率确定初始仓位，动量非正时离场；持仓期间不持续再平衡，目标波动不是实际波动保证。只做多，收盘确认后次日开盘尝试成交。思想参考 <a href="https://www.aqr.com/Insights/Research/Journal-Article/Time-Series-Momentum" target="_blank" rel="noopener noreferrer">AQR 时间序列动量</a>与<a href="https://www.nber.org/papers/w22208" target="_blank" rel="noopener noreferrer">波动率管理研究</a>。跨资产期货研究不是 A 股有效性证明，本实现也不是论文公式复刻。</div>
+          </div>
+          <div class="strat-param-group" id="paramGroup-chandelier" style="display:none">
+            <div class="bt-row">
+              <div class="bt-field"><label for="btCEEntry">入场突破周期</label><input type="number" id="btCEEntry" value="55" min="2" max="1000" step="1"></div>
+              <div class="bt-field"><label for="btCEATR">ATR周期</label><input type="number" id="btCEATR" value="22" min="2" max="1000" step="1"></div>
+            </div>
+            <div class="bt-row">
+              <div class="bt-field"><label for="btCEMult">止损ATR倍数</label><input type="number" id="btCEMult" value="3" min="0.1" max="20" step="0.1"></div>
+              <div class="bt-field"><label for="btCERisk">建仓风险预算 (%)</label><input type="number" id="btCERisk" value="1" min="0.01" max="100" step="0.1"></div>
+            </div>
+            <div class="strat-hint">默认55日突破入场、ATR(22) × 3跟踪、1%建仓风险预算。参考 <a href="https://www.tradingview.com/support/solutions/43000773013-chandelier-exit/" target="_blank" rel="noopener noreferrer">Chandelier Exit</a>；本项目改为持仓以来最高价与只上移的止损，并加突破入场，属于工程改编。只做多、收盘确认次日开盘执行；跳空可能使损失超过风险预算，尚未证明 A 股有效。</div>
+          </div>
+          <!-- 全部对比：each strategy retains its own parameters -->
           <div class="strat-param-group" id="paramGroup-all" style="display:none">
-            <div class="strat-hint">全部对比模式将同时运行六种技术策略并展示结果。各策略使用上方对应参数。</div>
+            <div class="strat-hint">全部对比模式将同时运行九种技术策略，各策略使用对应参数。新增三种策略仅为研究工具，未据此证明 A 股超额收益。</div>
           </div>
         </div>
 
@@ -1809,24 +1853,13 @@ function selectStrategy(el, strat) {
   el.classList.add('active');
   S.selectedStrategy = strat;
   // Show the matching param group if the panel is open
-  const groups = ['mr', 'turtle', 'ma', 'boll', 'td', 'grid', 'all'];
+  const groups = ['mr', 'turtle', 'ma', 'boll', 'td', 'grid', 'supertrend', 'tsmom', 'chandelier', 'all'];
   groups.forEach(g => {
     const grp = $(`#paramGroup-${g}`);
     if (grp) grp.style.display = (strat === g || strat === 'all') ? '' : 'none';
   });
-  // For "all", show mr/turtle/ma/boll groups but not td/grid individually
-  if (strat === 'all') {
-    ['mr', 'turtle', 'ma', 'boll', 'all'].forEach(g => {
-      const grp = $(`#paramGroup-${g}`);
-      if (grp) grp.style.display = '';
-    });
-    ['td', 'grid'].forEach(g => {
-      const grp = $(`#paramGroup-${g}`);
-      if (grp) grp.style.display = 'none';
-    });
-  }
   // 切换网格策略时自动展开参数面板 + 填入当前价
-  if (strat === 'grid' || strat === 'td') {
+  if (['grid', 'td', 'supertrend', 'tsmom', 'chandelier', 'all'].includes(strat)) {
     const panel = $('#stratParamsPanel');
     const arrow = $('#stratParamsArrow');
     if (panel && !panel.classList.contains('open')) {

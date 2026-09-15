@@ -8,7 +8,7 @@
   const DEFAULTS = Object.freeze({ initialCash: 1000000, commissionRate: 0.0003,
     minCommission: 5, stampTaxRate: 0.0005, slippageBps: 5, lotSize: 100,
     riskFreeRate: 0, limitPct: 10 });
-  const STRATEGIES = Object.freeze(['hold', 'mr', 'turtle', 'ma', 'boll', 'td', 'grid']);
+  const STRATEGIES = Object.freeze(['hold', 'mr', 'turtle', 'ma', 'boll', 'td', 'grid', 'supertrend', 'tsmom', 'chandelier']);
   function number(value, fallback, name, min, max, integer) {
     const n = value == null ? fallback : Number(value);
     if (!Number.isFinite(n) || n < min || n > max || (integer && !Number.isInteger(n)))
@@ -55,6 +55,19 @@
       p.gridDown = number(p.gridDown, 5, 'gridDown', 1, 100, true);
       p.gridUp = number(p.gridUp, 5, 'gridUp', 1, 100, true);
       p.lotBuy = number(p.lotBuy, 1, 'lotBuy', 1, 1000000, true);
+    } else if (strategy === 'supertrend') {
+      p.atrPeriod = number(p.atrPeriod, 10, 'atrPeriod', 2, 1000, true);
+      p.mult = number(p.mult, 3, 'mult', 0.1, 20);
+    } else if (strategy === 'tsmom') {
+      p.lookback = number(p.lookback, 126, 'lookback', 2, 2000, true);
+      p.volPeriod = number(p.volPeriod, 20, 'volPeriod', 2, 1000, true);
+      p.targetVol = number(p.targetVol, 15, 'targetVol', 0.01, 100);
+      p.maxAllocation = number(p.maxAllocation, 95, 'maxAllocation', 0.01, 100);
+    } else if (strategy === 'chandelier') {
+      p.entryPeriod = number(p.entryPeriod, 55, 'entryPeriod', 2, 1000, true);
+      p.atrPeriod = number(p.atrPeriod, 22, 'atrPeriod', 2, 1000, true);
+      p.mult = number(p.mult, 3, 'mult', 0.1, 20);
+      p.riskPct = number(p.riskPct, 1, 'riskPct', 0.01, 100);
     }
     return { p, o };
   }
@@ -78,6 +91,65 @@
     const out = Array(xs.length).fill(null); let sum = 0;
     for (let i = 0; i < xs.length; i++) { sum += xs[i]; if (i >= n) sum -= xs[i - n]; if (i >= n - 1) out[i] = sum / n; }
     return out;
+  }
+  function trueRanges(data) {
+    return data.map((b,i)=>i?Math.max(b.high-b.low,Math.abs(b.high-data[i-1].close),Math.abs(b.low-data[i-1].close)):b.high-b.low);
+  }
+  // Wilder RMA: SMA seed of n true ranges, then alpha = 1/n.
+  // TradingView ATR uses RMA by default, not a rolling simple ATR.
+  function wilderATR(data,n) {
+    const tr=trueRanges(data),out=Array(data.length).fill(null);let seed=0,previous=null;
+    for(let i=0;i<tr.length;i++) {
+      if(i<n)seed+=tr[i];
+      if(i===n-1)previous=seed/n;
+      else if(i>=n)previous=(previous*(n-1)+tr[i])/n;
+      if(previous!=null)out[i]=previous;
+    }
+    return out;
+  }
+  // Official band recurrence, with explicit down-trend initialization:
+  // https://www.tradingview.com/support/solutions/43000634738-supertrend/
+  function supertrendSeries(data,p) {
+    const atr=wilderATR(data,p.atrPeriod),out=[];
+    for(let i=0;i<data.length;i++) {
+      const b=data[i],a=atr[i],prev=out[i-1];
+      if(a==null) {out.push({time:b.time,atr:null,upperBand:null,lowerBand:null,value:null,direction:'down',flip:null});continue;}
+      const mid=(b.high+b.low)/2,basicUpper=mid+p.mult*a,basicLower=mid-p.mult*a;
+      let upper=basicUpper,lower=basicLower,direction='down';
+      if(prev&&prev.atr!=null) {
+        upper=basicUpper<prev.upperBand||data[i-1].close>prev.upperBand?basicUpper:prev.upperBand;
+        lower=basicLower>prev.lowerBand||data[i-1].close<prev.lowerBand?basicLower:prev.lowerBand;
+        direction=prev.direction==='down'?(b.close>upper?'up':'down'):(b.close<lower?'down':'up');
+      }
+      out.push({time:b.time,atr:a,upperBand:upper,lowerBand:lower,value:direction==='up'?lower:upper,direction,
+        flip:prev&&prev.atr!=null&&prev.direction!==direction?direction:null});
+    }
+    return out;
+  }
+  function momentumSeries(data,p) {
+    return data.map((b,i)=>{
+      const roc=i>=p.lookback?b.close/data[i-p.lookback].close-1:null;
+      let annualizedVol=null,allocation=null;
+      if(i>=p.volPeriod) {
+        const returns=[];for(let j=i-p.volPeriod+1;j<=i;j++)returns.push(data[j].close/data[j-1].close-1);
+        const mean=returns.reduce((s,x)=>s+x,0)/returns.length;
+        const variance=returns.reduce((s,x)=>s+(x-mean)**2,0)/(returns.length-1);
+        annualizedVol=Math.sqrt(variance*252);
+        allocation=Math.min(p.maxAllocation/100,annualizedVol>1e-12?p.targetVol/100/annualizedVol:p.maxAllocation/100);
+      }
+      return {time:b.time,roc,annualizedVol,allocation};
+    });
+  }
+  function advancedCache(data,strategy,p) {
+    return {supertrend:strategy==='supertrend'?supertrendSeries(data,p):null,momentum:strategy==='tsmom'?momentumSeries(data,p):null,
+      wilderATR:strategy==='chandelier'?wilderATR(data,p.atrPeriod):null};
+  }
+  // Only the current holding cycle contributes highs; never read pre-entry highs.
+  function updateChandelier(state,bar,atr,p) {
+    if(!state.shares||!state.entryDate||bar.time<state.entryDate||bar.complete===false||bar.closed===false||bar.volume===0||atr==null)return;
+    state.highestHigh=Math.max(state.highestHigh==null?bar.high:state.highestHigh,bar.high);
+    state.previousStop=Math.max(state.previousStop==null?0:state.previousStop,state.highestHigh-p.mult*atr,0);
+    state.stopUpdatedAt=bar.time;
   }
   function tdSignals(data) {
     const out = Array.from({length: data.length}, () => ({setupBuy: 0, setupSell: 0, cdBuy: 0, cdSell: 0, signal: null}));
@@ -147,6 +219,19 @@
         const levels=gridLevels();
         for(let g=0;g<p.gridDown;g++)if(previous>=levels[g]&&price<levels[g])buy(cash,'grid-buy',p.lotBuy*lotSize);
         if(shares)for(let g=p.gridDown+1;g<levels.length;g++)if(previous<=levels[g]&&price>levels[g]) { sell('grid-sell',{all:false,qty:p.lotBuy*lotSize});break; }
+      } else if(strategy==='supertrend') {
+        const point=cache.supertrend[i];
+        if(!shares&&point.flip==='up')buy(cash*.95,'supertrend-up');
+        else if(shares&&point.flip==='down')sell('supertrend-down');
+      } else if(strategy==='tsmom') {
+        const point=cache.momentum[i];
+        if(shares&&point.roc!=null&&point.roc<=0)sell('momentum-nonpositive');
+        else if(!shares&&point.roc>0&&point.allocation!=null)buy(cash*point.allocation,'momentum-positive');
+      } else if(strategy==='chandelier') {
+        const a=cache.wilderATR[i];
+        if(shares&&state.previousStop!=null&&price<=state.previousStop)sell('chandelier-stop');
+        else if(!shares&&i>=p.entryPeriod&&a>0&&price>Math.max(...data.slice(i-p.entryPeriod,i).map(d=>d.high)))
+          buy(cash*.95,'chandelier-breakout',cash*p.riskPct/100/(p.mult*a));
       }
       return orders;
   }
@@ -159,6 +244,9 @@
     if (data.some(d => d.volume == null)) warn('部分数据缺少成交量，无法排除全部停牌或流动性不足情形。');
     if (strategy === 'td') warn('TD 使用本项目简化的 Setup/Countdown 规则，不包含完整商业 TD 指标规则。');
     if (strategy === 'turtle') warn('海龟仓位按 ATR 计算；十日低点退出及跳空不保证单笔损失受风险比例限制。');
+    if (strategy === 'supertrend') warn('Supertrend 使用 Wilder RMA ATR 与官方递推带，仅交易方向翻转；震荡行情可能连续反复止损，参数不代表最优。');
+    if (strategy === 'tsmom') warn('TSMOM 是仅做多、入场定仓的动量改编，不是原论文多资产期货组合复现；持仓后不持续再平衡，'+p.targetVol+'%是入场波动估算目标，不是实际波动保证。');
+    if (strategy === 'chandelier') warn('吊灯策略为历史高点突破入场、持仓期最高价减 Wilder ATR 的单向跟踪退出；风险比例仅用于入场数量，收盘确认与跳空可能使实际损失超出目标。');
     let start = o.startIndex == null ? 0 : number(o.startIndex, 0, 'startIndex', 0, data.length - 1, true);
     let end = o.endIndex == null ? data.length - 1 : number(o.endIndex, data.length - 1, 'endIndex', 0, data.length - 1, true);
     function validDate(value) {return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value;}
@@ -167,7 +255,9 @@
     if (start > end) throw new Error('No bars in the evaluation interval');
     let cash = o.initialCash, shares = 0, lots = [], cycle = null, cycleSeq = 0;
     const fills = [], trades = [], equity = [], skippedOrders = [];
-    const state = { batchesBought: 0, tpHits: [false, false, false], base: p.base || data[start].open, pendingOrders: [] };
+    const state = { batchesBought: 0, tpHits: [false, false, false], base: p.base || data[start].open, pendingOrders: [],
+      entryDate:null,highestHigh:null,previousStop:null,stopUpdatedAt:null };
+    const advanced=advancedCache(data,strategy,p),stateHistory=[];
     const allSMA = strategy === 'mr' ? sma(close, p.smaPeriod) : null;
     const maShort = strategy === 'ma' ? sma(close, p.shortN) : null, maLong = strategy === 'ma' ? sma(close, p.longN) : null;
     const td = strategy === 'td' ? tdSignals(data) : null;
@@ -209,6 +299,7 @@
         const f={id:fills.length+1,cycleId:cycle.id,type:'buy',side:'buy',date:b.time,time:b.time,signalDate:order.signalDate,price,openPrice:b.open,qty,shares:qty,gross,commission:fee,stampTax:0,fees:fee,cashFlow:-cost,reason:order.reason};
         fills.push(f);cycle.fillIds.push(f.id);
         if(strategy==='mr')state.batchesBought++;
+        if(strategy==='chandelier') {state.entryDate=b.time;state.highestHigh=null;state.previousStop=null;state.stopUpdatedAt=null;}
         return;
       }
       const available=sellable(i), requested=order.all?shares:roundLot(order.fraction != null?shares*order.fraction:order.qty);
@@ -232,10 +323,11 @@
           pnl:(cycle.sellNet-cycle.buyCost)/cycle.buyCost*100,profit:cycle.sellNet-cycle.buyCost,buyCost:cycle.buyCost,sellNet:cycle.sellNet,
           fillIds:cycle.fillIds.slice(),holding:false});
         cycle=null;state.batchesBought=0;state.tpHits=[false,false,false];
+        if(strategy==='chandelier'){state.entryDate=null;state.highestHigh=null;state.previousStop=null;state.stopUpdatedAt=null;}
       }
     }
     function signal(i) {
-      return signalOrders(data,strategy,p,Object.assign({},state,{shares,cash,avgCost:averageCost()}),o.initialCash,o.lotSize,i,start,{allSMA,maShort,maLong,atr,td,close});
+      return signalOrders(data,strategy,p,Object.assign({},state,{shares,cash,avgCost:averageCost()}),o.initialCash,o.lotSize,i,start,Object.assign({allSMA,maShort,maLong,atr,td,close},advanced));
     }
 
     // The last pre-start close may prepare the first evaluation day's order,
@@ -245,6 +337,10 @@
       if(strategy==='hold'&&!holdPlaced) pending=[{side:'buy',budget:o.initialCash,reason:'initial-allocation',signalDate:null}];
       for(const order of pending)execute(order,i);
       if(strategy==='hold'&&shares>0)holdPlaced=true;
+      if(strategy==='chandelier') {
+        state.shares=shares;updateChandelier(state,data[i],advanced.wilderATR[i],p);
+        stateHistory.push({time:data[i].time,shares,entryDate:state.entryDate,highestHigh:state.highestHigh,previousStop:state.previousStop,stopUpdatedAt:state.stopUpdatedAt});
+      }
       equity.push({time:data[i].time,value:cash+shares*data[i].close,cash,shares,sellableShares:sellable(i)});
       pending=strategy==='hold'?[]:signal(i);
     }
@@ -257,7 +353,7 @@
     if(!fills.length)warn('评价区间没有成交；请检查指标预热、策略信号、资金和交易约束。');
     const stats=metrics(equity,trades,o.initialCash,data[start].open,finalPrice,o.riskFreeRate);
     return Object.assign(stats,{strategy,params:p,config:o,initialCash:o.initialCash,equity,trades,fills,finalShares:shares,finalCash:cash,finalVal,
-      shares,cash,holding,currentState:state,warnings,skippedOrders,levels:strategy==='grid'?gridLevels():[],
+      shares,cash,holding,currentState:state,warnings,skippedOrders,stateHistory,indicatorSeries:advanced.supertrend||advanced.momentum||undefined,levels:strategy==='grid'?gridLevels():[],
       gridParams:strategy==='grid'?Object.assign({},p,{base:state.base}):undefined,tdSignals:td||undefined,
       buyCount:fills.filter(f=>f.side==='buy').length,sellCount:fills.filter(f=>f.side==='sell').length,
       totalFees:fills.reduce((s,f)=>s+f.fees,0),start:data[start].time,end:data[end].time,signalTiming:'closed-bar-next-open',
@@ -283,11 +379,25 @@
     }
     let base=last.close;
     if(strategy==='grid')base=number(position.base,avgCost||NaN,'当前网格基准',0.000001,1e10);
-    const needed=strategy==='mr'?p.smaPeriod:strategy==='ma'?p.longN+1:strategy==='boll'?p.period+1:strategy==='turtle'?Math.max(p.entryPeriod,p.exitPeriod,p.atrPeriod)+1:strategy==='td'?13:2;
+    const needed=strategy==='mr'?p.smaPeriod:strategy==='ma'?p.longN+1:strategy==='boll'?p.period+1:strategy==='turtle'?Math.max(p.entryPeriod,p.exitPeriod,p.atrPeriod)+1:strategy==='td'?13:
+      strategy==='supertrend'?p.atrPeriod+1:strategy==='tsmom'?Math.max(p.lookback,p.volPeriod)+1:strategy==='chandelier'?Math.max(p.entryPeriod+1,p.atrPeriod):2;
     if(data.length<needed)throw new Error('该策略需要至少 '+needed+' 根已完成日线');
     const cache={close,allSMA:strategy==='mr'?sma(close,p.smaPeriod):null,maShort:strategy==='ma'?sma(close,p.shortN):null,maLong:strategy==='ma'?sma(close,p.longN):null,
       td:strategy==='td'?tdSignals(data):null,atr:strategy==='turtle'?sma(data.map((b,j)=>j?Math.max(b.high-b.low,Math.abs(b.high-close[j-1]),Math.abs(b.low-close[j-1])):b.high-b.low),p.atrPeriod):null};
-    const state={shares,cash,avgCost,base,batchesBought,tpHits},rawOrders=signalOrders(data,strategy,p,state,capital,o.lotSize,i,0,cache);
+    Object.assign(cache,advancedCache(data,strategy,p));
+    const state={shares,cash,avgCost,base,batchesBought,tpHits};
+    if(strategy==='chandelier'&&shares) {
+      if(typeof position.entryDate!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(position.entryDate)||!Number.isFinite(Date.parse(position.entryDate))||new Date(position.entryDate).toISOString().slice(0,10)!==position.entryDate)
+        throw new Error('吊灯退出需要本轮真实建仓日期 entryDate');
+      if(position.entryDate>last.time)throw new Error('本轮建仓日的日线尚未完成，暂不能生成收盘退出信号');
+      if(position.highestHigh==null||position.highestHigh==='')throw new Error('请录入本轮持仓最高价 highestHigh，不能使用建仓前历史最高价');
+      if(position.previousStop==null||position.previousStop==='')throw new Error('请录入上一根已确认吊灯跟踪线 previousStop，不能重新计算后向下放宽');
+      state.entryDate=position.entryDate;
+      state.highestHigh=number(position.highestHigh,NaN,'本轮持仓最高价',0.0000001,1e12);
+      state.previousStop=number(position.previousStop,NaN,'上一跟踪止损线',0,state.highestHigh);
+      updateChandelier(state,last,cache.wilderATR[i],p);
+    }
+    const rawOrders=signalOrders(data,strategy,p,state,capital,o.lotSize,i,0,cache);
     const fees=g=>g?Math.max(o.minCommission,g*o.commissionRate):0,round=n=>Math.floor((n+1e-10)/o.lotSize)*o.lotSize;
     let remainingCash=cash,remainingShares=shares,remainingSellable=available;
     const orders=rawOrders.map(order=>{
@@ -317,12 +427,31 @@
     else if(strategy==='boll')rules.push('当日收盘与此前 '+p.period+' 根收盘计算的布林带比较；空仓触下轨使用现金95%买入，持仓触上轨退出。');
     else if(strategy==='turtle')rules.push('当日收盘突破此前 '+p.entryPeriod+' 日高点且空仓时，按 ATR 与可用现金限额定仓；跌破此前 '+p.exitPeriod+' 日低点退出。ATR定仓不保证最大亏损。');
     else if(strategy==='grid')rules.push('以手动基准 '+base.toFixed(2)+' 元比较相邻两根已完成收盘价：向下穿越基准下方格线才买入；向上穿越基准上方格线时最多卖出一档（'+p.lotBuy+'手）。一根日线跨多档可产生多笔买单，但只会有一档卖单。成交后按剩余实际成本更新基准；清仓后使用实际卖出价重新生成。');
+    else if(strategy==='supertrend') {
+      const point=cache.supertrend[i];
+      rules.push('Supertrend 使用 Wilder RMA ATR('+p.atrPeriod+') × '+p.mult+'；本根已确认上轨 '+point.upperBand.toFixed(2)+' 元、下轨 '+point.lowerBand.toFixed(2)+' 元，方向为'+(point.direction==='up'?'上行':'下行')+'。只在下行翻上行且空仓时买入现金95%；上行翻下行且持仓时退出。');
+      rules.push('下一根完成日线先根据其高低价、ATR和前一轨道递推新上下轨，再判断收盘穿越；上述价格是当前观察快照，不能当作长期固定盘中触价单。');
+    } else if(strategy==='tsmom') {
+      const point=cache.momentum[i],reference=data[i-p.lookback].close;
+      rules.push('本根 '+p.lookback+' 日动量基准价 '+reference.toFixed(2)+' 元；收盘高于该历史收盘价（ROC='+ (point.roc*100).toFixed(2)+'%）且空仓时入场，收盘等于或低于该基准且持仓时退出。基准随日线每日更新。');
+      rules.push('过去 '+p.volPeriod+' 个日收益的样本标准差按√252年化，当前 '+(point.annualizedVol*100).toFixed(2)+'%；入场现金比例=min('+p.maxAllocation+'%, '+p.targetVol+'%/年化波动)，当前 '+(point.allocation*100).toFixed(2)+'%。只在入场时定仓，持有期间不持续再平衡；零观测波动时按仓位上限处理。');
+    } else if(strategy==='chandelier') {
+      const priorHigh=Math.max(...data.slice(i-p.entryPeriod,i).map(b=>b.high)),a=cache.wilderATR[i];
+      rules.push('空仓时，本根收盘必须 > 此前 '+p.entryPeriod+' 日高点 '+priorHigh.toFixed(2)+' 元；入场数量按现金×'+p.riskPct+'% / ('+p.mult+'×Wilder ATR'+p.atrPeriod+')向下取整，且不超过现金95%可负担数量。当前ATR为 '+a.toFixed(4)+' 元。');
+      if(shares)rules.push('本轮 '+state.entryDate+' 建仓后的最高价更新为 '+state.highestHigh.toFixed(2)+' 元；本根跟踪退出线=max(上一线, 本轮最高价−'+p.mult+'×ATR, 0)='+state.previousStop.toFixed(2)+' 元。收盘 ≤ 此线则下一交易日开盘退出；跟踪线只提高，不下移。');
+      else rules.push('尚未建仓，不引用旧持仓或全历史最高价建立退出线。实际入场后，从建仓日已完成日线开始记录本轮最高价与只升不降的跟踪线。');
+    }
     const warnings=['本计划采用收盘确认 → 下一交易日开盘模型。盘中碰到价格并不等于日线信号；券商盘中触价单无法直接代替本规则。',
       '股数按最新已完成收盘价及费用估算；开盘跳空后必须重新校验预算、可卖数量及成交条件。当前可卖数量作为保守上限，不预支次日解禁数量。',
       '执行日是信号日之后的第一个交易日；若其开盘已过，该开盘计划已过期，不能自动顺延或追单。每次成交或持仓变化后重新生成。',
       '平均成本、持仓与策略阶段来自手动录入，不能由历史回测推断；如果网格基准刚刚修改，应从修改后的新日线开始观察，不追溯执行旧穿越。'];
+    if(strategy==='supertrend')warnings.push('这是经典趋势指标的可解释执行版本，不是收益最优证明；震荡市场可能反复翻转。');
+    if(strategy==='tsmom')warnings.push('本版本是单标的仅做多动量与入场波动定仓改编，不复现 AQR 2012 多资产期货/远期的原论文组合；目标波动不是持仓期间实际波动保证。');
+    if(strategy==='chandelier')warnings.push(p.entryPeriod+'日突破入场与本轮最高价、只收紧吊灯退出是本项目组合改编。风控比例是数量估算，不能保证收盘退出或跳空时的实际最大亏损；手填最高价与止损线须与当前价格采用相同复权单位。');
     return {strategy,params:p,config:o,asOf:last.time,referenceClose:last.close,orders,rules,warnings,position:{cash,quantity:shares,sellableQty:available,avgCost},currentState:state,
       signalTiming:'closed-bar-next-open',budgetRemaining:remainingCash,sellableRemaining:remainingSellable};
   }
-  return { run, plan, defaults: DEFAULTS, strategies: STRATEGIES, calcTDSequential: tdSignals, version: '1.1.0' };
+  return { run, plan, defaults: DEFAULTS, strategies: STRATEGIES, calcTDSequential: tdSignals,
+    calcWilderATR:(data,period=14)=>wilderATR(prepare(data),number(period,14,'atrPeriod',2,1000,true)),
+    calcSupertrend:(data,params={})=>supertrendSeries(prepare(data),normalize('supertrend',params,{}).p),version:'1.2.0' };
 });

@@ -1,7 +1,16 @@
 (function (global) {
   'use strict';
 
-  const STRATEGIES = { hold: '买入持有', mr: '均值回归', ma: '双均线', turtle: '海龟突破', boll: '布林带', td: 'TD 序列', grid: '网格' };
+  const STRATEGIES = { hold: '买入持有', mr: '均值回归', ma: '双均线', turtle: '海龟突破', boll: '布林带', td: 'TD 序列', grid: '网格', supertrend: '超级趋势', tsmom: '波动率约束动量', chandelier: '突破 + 吊灯跟踪止损' };
+  const STRATEGY_DEFAULTS = {
+    hold: {}, mr: { threshold: 25, batches: 3, tp1: 50, tp2: 100, tp3: 150, stopLoss: 30, smaPeriod: 60 },
+    ma: { shortN: 5, longN: 20 }, turtle: { entryPeriod: 20, exitPeriod: 10, atrPeriod: 20, riskPct: 2 },
+    boll: { period: 20, mult: 2 }, td: {}, grid: { step: 5, gridDown: 5, gridUp: 5, lotBuy: 1 },
+    supertrend: { atrPeriod: 10, mult: 3 },
+    tsmom: { lookback: 126, volPeriod: 20, targetVol: 15, maxAllocation: 95 },
+    chandelier: { entryPeriod: 55, atrPeriod: 22, mult: 3, riskPct: 1 }
+  };
+  const PARAM_LABELS = { threshold: '偏离阈值%', batches: '买入批数', tp1: '止盈1%', tp2: '止盈2%', tp3: '止盈3%', stopLoss: '止损%', smaPeriod: '均线周期', shortN: '短均线', longN: '长均线', entryPeriod: '突破周期', exitPeriod: '退出周期', atrPeriod: 'ATR周期', riskPct: '风险预算%', period: '周期', mult: '倍数', base: '基准价', step: '格距%', gridDown: '向下格数', gridUp: '向上格数', lotBuy: '每格手数', lookback: '动量回看', volPeriod: '波动率周期', targetVol: '目标年化波动%', maxAllocation: '最大仓位%' };
   const FEE_DEFAULTS = { commissionRate: 0.0003, minCommission: 5, stampTaxRate: 0.0005, slippageBps: 5 };
   const state = { root: null, data: null, saved: null, loading: false, saving: false, dirty: false, conflict: false, error: '', notice: '', tab: 'watchlist', expanded: true, activeId: null, temporary: null, result: null, resultId: null, calculating: false, quoteLoading: false, quotes: {}, runToken: 0 };
   const clone = value => JSON.parse(JSON.stringify(value));
@@ -95,10 +104,16 @@
     return [...new Set(errors)];
   }
   function effectiveFees(item) { return { ...FEE_DEFAULTS, ...(item.feeOptions || {}) }; }
+  function effectiveStrategyParams(asset) { return { ...(STRATEGY_DEFAULTS[asset.strategy || 'hold'] || {}), ...(asset.params || {}) }; }
+  function strategySummary(asset) {
+    const entries = Object.entries(effectiveStrategyParams(asset));
+    return entries.length ? entries.map(([key, value]) => `${PARAM_LABELS[key] || key} ${value}`).join(' · ') : asset.strategy === 'td' ? '本项目固定 TD Setup / Countdown 规则' : '买入持有，无指标参数';
+  }
+  function portfolioSpec(item) { const result = clone(item); result.feeOptions = effectiveFees(item); result.assets.forEach(asset => { asset.params = effectiveStrategyParams(asset); }); return result; }
   function workspacePayload(data) {
     const payload = clone(data);
     payload.watchlist.forEach(item => { for (const key of ['avgCost', 'quantity', 'sellableQty']) if (item[key] == null || (typeof item[key] === 'string' && !item[key].trim())) delete item[key]; });
-    payload.portfolios.forEach(item => { item.feeOptions = effectiveFees(item); });
+    payload.portfolios = payload.portfolios.map(portfolioSpec);
     return payload;
   }
   function input(label, attributes, value, extra = '') {
@@ -136,7 +151,9 @@
       ${item.assets.length ? `<div class="sw-asset-list">${item.assets.map((asset, index) => `<article class="sw-asset-row"><div class="sw-stock-name"><strong>${esc(asset.name || asset.symbol)}</strong><span>${esc(asset.symbol)}</span></div>
         ${input(allocation ? '初始权重（%）' : '起始股数', `type="number" min="0" step="${allocation ? '0.1' : '1'}" inputmode="decimal" data-asset="${index}" data-field="${allocation ? 'weight' : 'quantity'}" aria-label="${esc(asset.name)}${allocation ? '权重' : '股数'}"`, allocation ? asset.weight ?? '' : asset.quantity ?? '')}
         <label class="sw-field"><span>${allocation ? '独立策略配置' : '固定股数估值'}</span><select data-asset="${index}" data-field="strategy" aria-label="${esc(asset.name)}运行策略" ${allocation ? '' : 'disabled'}>${!allocation ? '<option value="fixed-shares" selected>固定持有（不运行策略）</option>' : ''}${Object.entries(STRATEGIES).map(([key, label]) => `<option value="${key}" ${allocation && (asset.strategy || 'hold') === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
-        <button class="sw-remove" data-action="remove-asset" data-index="${index}" aria-label="从组合移除${esc(asset.name || asset.symbol)}">移除</button></article>`).join('')}</div>` : '<div class="sw-empty sw-empty-small">添加股票后，填写权重或股数即可计算。默认采用买入持有。</div>'}
+        <button class="sw-remove" data-action="remove-asset" data-index="${index}" aria-label="从组合移除${esc(asset.name || asset.symbol)}">移除</button>
+        ${allocation ? `<p class="sw-asset-params">${esc(strategySummary(asset))}</p>` : ''}</article>`).join('')}</div>` : '<div class="sw-empty sw-empty-small">添加股票后，填写权重或股数即可计算。默认采用买入持有。</div>'}
+      ${allocation ? '<p class="sw-note">每只股票的组合参数独立保存，不跟随单股回测面板变化。切换策略会载入该策略默认参数；已有配置显示并保留其已保存参数。新增三种策略仅供研究，默认值未证明对 A 股有效。</p>' : ''}
       <details class="sw-fees" ${allocation ? '' : 'hidden'}><summary>成交费用与滑点</summary><div class="sw-fee-grid">
         ${input('佣金费率（%）', 'type="number" min="0" max="5" step="0.001" data-fee="commissionRate"', (fees.commissionRate ?? FEE_DEFAULTS.commissionRate) * 100)}
         ${input('每笔最低佣金（元）', 'type="number" min="0" max="10000" step="0.1" data-fee="minCommission"', fees.minCommission ?? 5)}
@@ -272,7 +289,7 @@
     if (!adapter()?.runPortfolio) { state.error = '组合计算模块尚未就绪，请稍后重试。'; updateStatus(); return; }
     const token = ++state.runToken; state.calculating = true; state.error = ''; state.result = null; render();
     try {
-      const result = await adapter().runPortfolio({ ...clone(item), feeOptions: effectiveFees(item) });
+      const result = await adapter().runPortfolio(portfolioSpec(item));
       if (token !== state.runToken) return;
       state.result = result; state.resultId = item.id;
     } catch (error) { if (token === state.runToken) state.error = error.message || '组合计算失败，请检查日期与股票数据。'; }
@@ -317,7 +334,7 @@
       if (key === 'mode') item.initialCash = target.value === 'shares' ? 0 : 1000000;
       markDirty(); if (key === 'mode') render(); return;
     }
-    if (target.dataset.asset != null) { const item = editablePortfolio().assets[Number(target.dataset.asset)], key = target.dataset.field; item[key] = key === 'strategy' ? target.value : number(target.value); markDirty(); return; }
+    if (target.dataset.asset != null) { const item = editablePortfolio().assets[Number(target.dataset.asset)], key = target.dataset.field; if (key === 'strategy' && event.type !== 'change') return; item[key] = key === 'strategy' ? target.value : number(target.value); if (key === 'strategy') item.params = { ...(STRATEGY_DEFAULTS[target.value] || {}) }; markDirty(); if (key === 'strategy') render(); return; }
     if (target.dataset.fee) { const item = editablePortfolio(), key = target.dataset.fee; item.feeOptions ||= {}; const value = number(target.value); item.feeOptions[key] = value == null ? undefined : ['commissionRate', 'stampTaxRate'].includes(key) ? value / 100 : value; markDirty(); }
   }
   function mount(target) {
@@ -331,5 +348,5 @@
     render(); reload(); return root;
   }
   global.StockWorkspace = { mount, reload, getHolding(symbol) { const item = state.saved?.watchlist.find(row => row.symbol === symbol); return item ? clone(item) : null; }, getSnapshot() { return state.saved ? clone(state.saved) : null; } };
-  if (typeof module !== 'undefined' && module.exports) module.exports = { validatePortfolio, validateWorkspace, chartHTML, resultHTML, esc, number, workspacePayload, effectiveFees, testController: { state, onClick, onChange, save, request } };
+  if (typeof module !== 'undefined' && module.exports) module.exports = { validatePortfolio, validateWorkspace, chartHTML, resultHTML, esc, number, workspacePayload, effectiveFees, effectiveStrategyParams, strategySummary, portfolioSpec, testController: { state, onClick, onChange, save, request } };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validatePortfolio, validateWorkspace, resultHTML, chartHTML, esc, number, workspacePayload, effectiveFees, testController } = require('../workspace-ui.js');
+const { validatePortfolio, validateWorkspace, resultHTML, chartHTML, esc, number, workspacePayload, effectiveFees, effectiveStrategyParams, strategySummary, portfolioSpec, testController } = require('../workspace-ui.js');
 
 function portfolio(overrides = {}) {
   return { id: 'test', name: '测试组合', mode: 'allocation', initialCash: 1000000, start: '2025-01-01', end: '2026-01-01', assets: [{ symbol: 'sh600000', name: '测试股票', weight: 50, quantity: 100, strategy: 'hold', params: {} }], ...overrides };
@@ -54,6 +54,25 @@ test('saving strategy parameters is lossless and displayed fee defaults are expl
   assert.equal(payload.portfolios[0].feeOptions.stampTaxRate, 0.0005);
   assert(!Object.hasOwn(payload.portfolios[0].feeOptions, 'sellTaxRate'));
 });
+test('new strategy defaults are explicit in the saved and calculated portfolio without mutating the draft', () => {
+  const cases = {
+    supertrend: { atrPeriod: 10, mult: 3 },
+    tsmom: { lookback: 126, volPeriod: 20, targetVol: 15, maxAllocation: 95 },
+    chandelier: { entryPeriod: 55, atrPeriod: 22, mult: 3, riskPct: 1 }
+  };
+  for (const [strategy, expected] of Object.entries(cases)) {
+    const item = portfolio({ assets: [{ symbol: 'sh600000', weight: 100, strategy, params: {} }] });
+    assert.deepEqual(validatePortfolio(item), []);
+    assert.deepEqual(effectiveStrategyParams(item.assets[0]), expected);
+    assert.deepEqual(portfolioSpec(item).assets[0].params, expected);
+    assert.deepEqual(workspacePayload({ version: 1, watchlist: [], portfolios: [item] }).portfolios[0].assets[0].params, expected);
+    assert.deepEqual(item.assets[0].params, {});
+  }
+  const customized = { strategy: 'tsmom', params: { lookback: 252, targetVol: 12 } };
+  assert.deepEqual(effectiveStrategyParams(customized), { lookback: 252, volPeriod: 20, targetVol: 12, maxAllocation: 95 });
+  assert.match(strategySummary(customized), /动量回看 252/);
+  assert.match(strategySummary(customized), /目标年化波动% 12/);
+});
 function controllerFixture(data) {
   const node = { textContent: '', innerHTML: '', focus() {} };
   const root = { innerHTML: '', contains: () => true, querySelector(selector) { if (selector === '[data-action="run"]' && !this.innerHTML.includes('data-action="run"')) return null; return ['#sw-save-state', '#sw-alert', '#sw-portfolio-validation', '#sw-allocation-note', '#sw-result', '[data-action="save"]', '[data-action="run"]'].includes(selector) ? { ...node } : null; } };
@@ -64,6 +83,20 @@ function action(name) {
   const button = { dataset: { action: name }, disabled: false };
   return testController.onClick({ target: { closest: () => button } });
 }
+test('strategy changes load independent defaults once and retain other saved configuration parameters', () => {
+  const first = portfolio({ assets: [{ symbol: 'sh600000', weight: 100, strategy: 'ma', params: { shortN: 8, longN: 30 } }] });
+  const second = portfolio({ id: 'other', assets: [{ symbol: 'sh600001', weight: 100, strategy: 'chandelier', params: { entryPeriod: 30, atrPeriod: 14, mult: 2, riskPct: 0.5 } }] });
+  const root = controllerFixture({ version: 1, watchlist: [], portfolios: [first, second] });
+  const target = { dataset: { asset: '0', field: 'strategy' }, value: 'supertrend' };
+  testController.onChange({ type: 'input', target });
+  assert.equal(testController.state.data.portfolios[0].assets[0].strategy, 'ma');
+  testController.onChange({ type: 'change', target });
+  assert.deepEqual(testController.state.data.portfolios[0].assets[0].params, { atrPeriod: 10, mult: 3 });
+  assert.deepEqual(testController.state.data.portfolios[1].assets[0].params, second.assets[0].params);
+  assert.equal(testController.state.saved.portfolios[0].assets[0].strategy, 'ma');
+  assert(root.innerHTML.includes('ATR周期 10'));
+  assert(root.innerHTML.includes('不跟随单股回测面板变化'));
+});
 test('an empty new portfolio does not enter the server payload or block watchlist saving', async () => {
   controllerFixture({ version: 1, watchlist: [{ symbol: 'sh600000', name: '测试' }], portfolios: [] });
   await action('new-portfolio');

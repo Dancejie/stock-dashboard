@@ -69,6 +69,7 @@
 #stockWorkspace .sw-assets-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 10px; }
 #stockWorkspace .sw-asset-list { display: grid; gap: 7px; }
 #stockWorkspace .sw-asset-row { display: grid; grid-template-columns: minmax(130px, 1.3fr) minmax(90px, .8fr) minmax(130px, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--sw-border); border-radius: 7px; background: #11161c; }
+#stockWorkspace .sw-asset-params { grid-column: 1 / -1; color: var(--sw-muted); font-size: 10px; line-height: 1.6; overflow-wrap: anywhere; border-top: 1px solid var(--sw-border); padding-top: 7px; }
 #stockWorkspace .sw-fees { padding: 12px; margin-top: 14px; border: 1px solid var(--sw-border); border-radius: 7px; }
 #stockWorkspace summary { cursor: pointer; color: var(--sw-muted); width: fit-content; }
 #stockWorkspace .sw-fee-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }

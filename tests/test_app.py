@@ -162,6 +162,26 @@ class WorkspaceASGITests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.put('/api/workspace', headers=sso(), json=[])
         self.assertEqual(response.status_code, 422)
 
+    async def test_new_strategy_parameters_survive_save_and_reload(self):
+        cases = {
+            'supertrend': {'atrPeriod': 8, 'mult': 2.5},
+            'tsmom': {'lookback': 252, 'volPeriod': 30, 'targetVol': 12, 'maxAllocation': 80},
+            'chandelier': {'entryPeriod': 30, 'atrPeriod': 14, 'mult': 2, 'riskPct': 0.5},
+        }
+        for revision, (strategy, params) in enumerate(cases.items()):
+            with self.subTest(strategy=strategy):
+                value = workspace(version=revision)
+                value['portfolios'][0]['assets'][0].update(strategy=strategy, params=params)
+                value['portfolios'][0]['feeOptions']['stampTaxRate'] = 0.0005
+                response = await self.client.put('/api/workspace', headers=sso(), json=value)
+                self.assertEqual(response.status_code, 200, response.text)
+                saved = (await self.client.get('/api/workspace', headers=sso())).json()
+                self.assertEqual(saved['version'], revision + 1)
+                asset = saved['portfolios'][0]['assets'][0]
+                self.assertEqual(asset['strategy'], strategy)
+                self.assertEqual(asset['params'], params)
+                self.assertEqual(saved['portfolios'][0]['feeOptions']['stampTaxRate'], 0.0005)
+
 
 class WorkspaceValidationTests(unittest.TestCase):
     def test_market_warmup_can_span_twelve_years_but_saved_evaluation_is_limited_to_ten(self):

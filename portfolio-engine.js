@@ -113,6 +113,9 @@
         initialCapital = initialCash * asset.weight / 100;
         var options = Object.assign({}, spec.executionOptions || {}, { initialCash: initialCapital, start: actualStart, end: actualEnd });
         if (options.limitPct === undefined) options.limitPct = /^(?:sz30[01]|sh688)/.test(asset.symbol) ? 20 : 10;
+        // STAR Market orders must not inherit the ordinary A-share 100-share minimum.
+        // A one-share lot is an explicit diagnostic setting, never the production default.
+        if (/^sh688/.test(asset.symbol) && options.lotSize !== 1) options.lotSize = 200;
         // Caller indices must never override the shared evaluation dates.
         delete options.startIndex; delete options.endIndex; delete options.calendar;
         result = core().run(data[asset.symbol], asset.strategy || 'hold', Object.assign({}, asset.params || {}), options);
@@ -163,7 +166,9 @@
       equity: equity, perAsset: results, assets: results, notices: notices,
       caveats: spec.mode === 'shares'
         ? ['固定股数价格收益：未计分红、拆股或其他公司行为；成本均价不参与历史净值。', '缺少完整交易日历时，只能识别股票之间不一致的行情缺口。']
-        : ['起始资金分配一次，之后不自动恢复权重；各股票账户独立。', '公司行为处理取决于输入行情口径；未另行叠加分红或拆股。', '缺少完整交易日历时，只能识别股票之间不一致的行情缺口。']
+        : ['起始资金分配一次，之后不自动恢复权重；各股票账户独立。', '公司行为处理取决于输入行情口径；未另行叠加分红或拆股。', '缺少完整交易日历时，只能识别股票之间不一致的行情缺口。'].concat(
+          assets.some(function (asset) { return /^sh688/.test(asset.symbol); }) && !(spec.executionOptions && spec.executionOptions.lotSize === 1)
+            ? ['科创板使用 200 股档位保守模拟。实际申报数量达到 200 股后可按 1 股递增；本版采用 200 股整数档位，结果可能存在离散误差。'] : [])
     });
   }
 

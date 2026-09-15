@@ -199,3 +199,136 @@ test('condition-plan adapter copies real newlines and only the selected strategy
   assert(context.lastPlan.includes('95%'));assert(!context.lastPlan.includes('均值回归'));
   assert(!output.innerHTML.includes('NaN'));assert(output.innerHTML.includes('9500.00'));assert.equal(typeof button.onclick,'function');
 });
+
+function supertrendFixture() {
+  return [[10,11,9,10],[10,11,9,10],[10,15,9,14],[13.5,16,13,15],[15,15,8,9],[8.5,10,8,9]].map(([open,high,low,close],i)=>({time:date(i),open,high,low,close,volume:10000}));
+}
+function chandelierFixture() {
+  const rows=bars([...Array(70).fill(100),110,112,125,124,90,90]);
+  rows[0].high=500;
+  Object.assign(rows[70],{open:100,high:111,low:99});
+  Object.assign(rows[71],{open:110,high:113,low:108});
+  Object.assign(rows[72],{open:112,high:130,low:111});
+  Object.assign(rows[73],{open:125,high:128,low:110});
+  Object.assign(rows[74],{open:124,high:125,low:89});
+  Object.assign(rows[75],{open:88,high:91,low:87});
+  return rows;
+}
+
+test('Wilder ATR uses an SMA seed and recursive 1/n smoothing including gaps',()=>{
+  const d=[[10,11,9,10],[10,13,10,12],[12,15,11,14],[14,16,13,15],[15,20,14,19]].map(([open,high,low,close],i)=>({time:date(i),open,high,low,close}));
+  const a=Q.calcWilderATR(d,3);
+  assert.deepEqual(a.slice(0,2),[null,null]);near(a[2],3);near(a[3],3);near(a[4],4);
+  assert.notEqual(a[4],(4+3+6)/3);
+  assert.deepEqual(Q.calcWilderATR(d.slice(0,4),3),a.slice(0,4));
+});
+
+test('Supertrend matches a hand-calculated official band recurrence and flips',()=>{
+  const rows=Q.calcSupertrend(supertrendFixture(),{atrPeriod:2,mult:1});
+  assert.equal(rows[0].atr,null);assert.equal(rows[1].direction,'down');
+  near(rows[1].upperBand,12);near(rows[1].lowerBand,8);
+  near(rows[2].atr,4);near(rows[2].upperBand,12);near(rows[2].lowerBand,8);assert.equal(rows[2].flip,'up');
+  near(rows[3].atr,3.5);near(rows[3].upperBand,18);near(rows[3].lowerBand,11);assert.equal(rows[3].flip,null);
+  near(rows[4].atr,5.25);near(rows[4].upperBand,16.75);near(rows[4].lowerBand,11);assert.equal(rows[4].flip,'down');near(rows[4].value,16.75);
+});
+
+test('Supertrend waits for next open on both flips and leaves last signal pending',()=>{
+  const p={atrPeriod:2,mult:1},d=supertrendFixture();
+  const pending=Q.run(d.slice(0,3),'supertrend',p,free);assert.equal(pending.fills.length,0);assert.equal(pending.currentState.pendingOrders[0].reason,'supertrend-up');
+  const r=Q.run(d,'supertrend',p,free);
+  assert.deepEqual(r.fills.map(f=>[f.side,f.signalDate,f.date,f.price]),[['buy',date(2),date(3),13.5],['sell',date(4),date(5),8.5]]);
+  assert.equal(r.trades.length,1);assertLedger(r);
+});
+
+test('TSMOM independently computed volatility limits initial allocation and does not rebalance',()=>{
+  const prices=[100,101,99,103,106,104,108,111,112,80,81],opens=prices.slice();opens[4]=104;opens[10]=79;
+  const d=bars(prices,opens),p={lookback:3,volPeriod:3,targetVol:15,maxAllocation:50};
+  const r=Q.run(d,'tsmom',p,free),returns=[101/100-1,99/101-1,103/99-1],mean=returns.reduce((a,b)=>a+b)/3;
+  const vol=Math.sqrt(returns.reduce((s,x)=>s+(x-mean)**2,0)/2)*Math.sqrt(252),allocation=Math.min(.5,.15/vol);
+  near(r.indicatorSeries[3].annualizedVol,vol);near(r.indicatorSeries[3].allocation,allocation);
+  near(r.indicatorSeries[3].roc,.03);
+  assert.equal(r.fills[0].qty,Math.floor(free.initialCash*allocation/104/100)*100);
+  assert.deepEqual(r.fills.map(f=>[f.side,f.signalDate,f.date]),[['buy',date(3),date(4)],['sell',date(9),date(10)]]);
+  assertLedger(r);
+});
+
+test('TSMOM zero observed volatility is bounded by allocation cap and equality exits',()=>{
+  const p={lookback:2,volPeriod:2,targetVol:15,maxAllocation:40};
+  const r=Q.run(bars([100,110,121,133.1,121,120]),'tsmom',p,free);
+  near(r.indicatorSeries[2].allocation,.4);
+  assert(r.fills[0].qty*r.fills[0].price<=free.initialCash*.4);
+  assert.equal(r.currentState.pendingOrders.length,0);
+  const equality=Q.plan(bars([100,110,100]),'tsmom',p,{cash:0,quantity:100,sellableQty:100,avgCost:100},free);
+  assert.equal(equality.orders[0].reason,'momentum-nonpositive');assert.equal(equality.orders[0].qty,100);
+});
+
+test('Chandelier initializes from the actual entry day, ratchets and exits next open',()=>{
+  const d=chandelierFixture(),p={entryPeriod:3,atrPeriod:3,mult:2,riskPct:1};
+  const r=Q.run(d,'chandelier',p,{...free,lotSize:1});
+  const buy=r.fills.find(f=>f.side==='buy');assert.equal(buy.date,date(71));
+  const first=r.stateHistory.find(s=>s.time===buy.date);assert.equal(first.highestHigh,113);assert(first.highestHigh<500);
+  const held=r.stateHistory.filter(s=>s.shares>0);
+  for(let i=1;i<held.length;i++)if(held[i].entryDate===held[i-1].entryDate)assert(held[i].previousStop>=held[i-1].previousStop);
+  const before=r.stateHistory.find(s=>s.time===date(72)),widerATR=r.stateHistory.find(s=>s.time===date(73));
+  near(before.previousStop,widerATR.previousStop);
+  const exit=r.fills.find(f=>f.side==='sell');assert.equal(exit.signalDate,date(74));assert.equal(exit.date,date(75));near(exit.price,88);
+  assert.equal(r.currentState.highestHigh,null);assert.equal(r.currentState.previousStop,null);assertLedger(r);
+});
+
+test('Chandelier never updates its high or stop from an unfinished bar',()=>{
+  const d=chandelierFixture().slice(0,74),p={entryPeriod:3,atrPeriod:3,mult:2,riskPct:1};
+  d[73].high=999;d[73].complete=false;
+  const r=Q.run(d,'chandelier',p,{...free,lotSize:1}),prev=r.stateHistory.at(-2),last=r.stateHistory.at(-1);
+  assert.equal(last.highestHigh,prev.highestHigh);assert.equal(last.previousStop,prev.previousStop);assert.equal(last.stopUpdatedAt,prev.stopUpdatedAt);
+  assert.deepEqual(r.currentState.pendingOrders,[]);
+});
+
+test('all three new strategies preserve causal prefixes, next-open timing, lot and fee limits',()=>{
+  const prefix=Array.from({length:200},(_,i)=>100+Math.sin(i/7)*20+i*.03);
+  const a=bars([...prefix,80,120,130]),b=bars([...prefix,400,10,900]);
+  const setups={supertrend:{atrPeriod:10,mult:2},tsmom:{lookback:20,volPeriod:10,targetVol:15,maxAllocation:95},chandelier:{entryPeriod:10,atrPeriod:10,mult:2,riskPct:1}};
+  for(const [strategy,p] of Object.entries(setups)) {
+    const options={initialCash:100000,commissionRate:.0003,minCommission:5,stampTaxRate:.0005,slippageBps:5,lotSize:100};
+    const ra=Q.run(a,strategy,p,options),rb=Q.run(b,strategy,p,options),short=Q.run(a.slice(0,200),strategy,p,options);
+    assert(ra.fills.length>0,strategy);
+    assert.deepEqual(ra.fills.filter(f=>f.date<=date(199)),rb.fills.filter(f=>f.date<=date(199)),strategy);
+    assert.deepEqual(short.fills,ra.fills.filter(f=>f.date<=date(199)),strategy);assert.deepEqual(short.equity,ra.equity.slice(0,200),strategy);
+    for(const f of ra.fills){assert(f.date>f.signalDate);assert.equal(f.qty%100,0);assert(f.fees>0);}
+    assertLedger(ra);assertLedger(rb);
+  }
+});
+
+test('new-strategy manual plans agree with core signals for actual holding state',()=>{
+  const setups=[['supertrend',supertrendFixture(),{atrPeriod:2,mult:1}],['tsmom',bars([100,101,99,103,106,104,108,111,112,80,81]),{lookback:3,volPeriod:3,targetVol:15,maxAllocation:50}],['chandelier',chandelierFixture(),{entryPeriod:3,atrPeriod:3,mult:2,riskPct:1}]];
+  for(const [strategy,d,p] of setups) {
+    for(let length=Math.max(p.atrPeriod||0,p.lookback||0,p.volPeriod||0,p.entryPeriod||0)+2;length<=d.length;length++) {
+      const data=d.slice(0,length),r=Q.run(data,strategy,p,{...free,lotSize:1}),s=r.currentState;
+      const position={cash:r.finalCash,quantity:r.finalShares,sellableQty:s.sellableShares,avgCost:s.avgCost,entryDate:s.entryDate,highestHigh:s.highestHigh,previousStop:s.previousStop};
+      const plan=Q.plan(data,strategy,p,position,{...free,lotSize:1});
+      assert.deepEqual(plan.orders.map(o=>[o.side,o.reason]),s.pendingOrders.map(o=>[o.side,o.reason]),strategy+' '+length);
+      assert(!plan.rules.join(' ').includes('NaN'));assert(plan.budgetRemaining>=-1e-7);assert(plan.sellableRemaining>=0);
+      if(strategy==='chandelier'&&r.finalShares) {near(plan.currentState.previousStop,s.previousStop);near(plan.currentState.highestHigh,s.highestHigh);}
+    }
+  }
+});
+
+test('Chandelier plans require manual holding-cycle state and never borrow pre-entry highs',()=>{
+  const data=chandelierFixture().slice(0,73),p={entryPeriod:3,atrPeriod:3,mult:2,riskPct:1};
+  const pos={cash:0,quantity:100,sellableQty:100,avgCost:110};
+  assert.throws(()=>Q.plan(data,'chandelier',p,pos,free),/entryDate/);
+  assert.throws(()=>Q.plan(data,'chandelier',p,{...pos,entryDate:date(71)},free),/highestHigh/);
+  assert.throws(()=>Q.plan(data,'chandelier',p,{...pos,entryDate:date(71),highestHigh:113},free),/previousStop/);
+  const plan=Q.plan(data,'chandelier',p,{...pos,entryDate:date(71),highestHigh:113,previousStop:102},free);
+  assert.equal(plan.currentState.highestHigh,130);assert(plan.currentState.previousStop>=102);assert(plan.currentState.previousStop<500);
+  assert.throws(()=>Q.plan(data,'chandelier',p,{...pos,entryDate:date(74),highestHigh:113,previousStop:102},free),/尚未完成/);
+});
+
+test('new strategy defaults and percentage constraints are explicit',()=>{
+  const data=bars(Array.from({length:150},(_,i)=>100+Math.sin(i)*2+i*.1));
+  assert.deepEqual(Q.run(data,'supertrend',{},free).params,{atrPeriod:10,mult:3});
+  assert.deepEqual(Q.run(data,'tsmom',{},free).params,{lookback:126,volPeriod:20,targetVol:15,maxAllocation:95});
+  assert.deepEqual(Q.run(data,'chandelier',{},free).params,{entryPeriod:55,atrPeriod:22,mult:3,riskPct:1});
+  assert.throws(()=>Q.run(data,'tsmom',{maxAllocation:101},free),/maxAllocation/);
+  assert.throws(()=>Q.run(data,'supertrend',{atrPeriod:1},free),/atrPeriod/);
+  assert.throws(()=>Q.run(data,'chandelier',{mult:0},free),/mult/);
+});

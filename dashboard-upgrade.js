@@ -1,7 +1,7 @@
 /* Shared data/time conventions for the existing dashboard and saved workspace. */
 (function () {
   'use strict';
-  const labels = {hold:'买入持有',mr:'均值回归',turtle:'海龟突破',ma:'双均线',boll:'布林带',td:'TD序列',grid:'网格'};
+  const labels = {hold:'买入持有',mr:'均值回归',turtle:'海龟突破',ma:'双均线',boll:'布林带',td:'TD序列',grid:'网格',supertrend:'超级趋势',tsmom:'波动率约束动量',chandelier:'突破与吊灯止损'};
   const clean = v => String(v == null ? '' : v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const num = (v,d=2) => Number.isFinite(Number(v)) ? Number(v).toFixed(d) : '—';
   const pct = v => Number.isFinite(Number(v)) ? (v>0?'+':'')+num(v)+'%' : '—';
@@ -33,7 +33,7 @@
   }
   function config() {
     return {initialCash:val('btCash',1000000),commissionRate:val('btCommission',.03)/100,
-      minCommission:val('btMinFee',5),stampTaxRate:val('btTax',.05)/100,slippageBps:val('btSlip',5),lotSize:100,
+      minCommission:val('btMinFee',5),stampTaxRate:val('btTax',.05)/100,slippageBps:val('btSlip',5),lotSize:/^sh688/.test(S.sinaSymbol)?200:100,
       limitPct: /^(sz30|sh68)/.test(S.sinaSymbol)?20:10,riskFreeRate:val('btRf',0)/100};
   }
   function params(key) {
@@ -41,6 +41,9 @@
     if(key==='ma')return {shortN:val('btMAShort',5),longN:val('btMALong',20)};
     if(key==='boll')return {period:val('btBollPeriod',20),mult:val('btBollMult',2)};
     if(key==='grid')return {step:val('gridStep',5),gridDown:val('gridDown',5),gridUp:val('gridUp',5),lotBuy:val('gridLotBuy',100)};
+    if(key==='supertrend')return {atrPeriod:val('btSTPeriod',10),mult:val('btSTMult',3)};
+    if(key==='tsmom')return {lookback:val('btMomLookback',126),volPeriod:val('btMomVolPeriod',20),targetVol:val('btMomTargetVol',15),maxAllocation:val('btMomMaxAllocation',95)};
+    if(key==='chandelier')return {entryPeriod:val('btCEEntry',55),atrPeriod:val('btCEATR',22),mult:val('btCEMult',3),riskPct:val('btCERisk',1)};
     return {};
   }
   function sparkline(equity) {
@@ -76,7 +79,7 @@
   async function backtest() {
     const btn=document.getElementById('btRun'),version=requestVersion,symbol=S.sinaSymbol,calculation=++calculationVersion;
     const valid=()=>version===requestVersion&&calculation===calculationVersion;
-    const key=S.selectedStrategy||'mr',keys=key==='all'?['mr','turtle','ma','boll','td','grid']:[key];
+    const key=S.selectedStrategy||'mr',keys=key==='all'?['mr','turtle','ma','boll','td','grid','supertrend','tsmom','chandelier']:[key];
     const frozenParams=Object.fromEntries(keys.map(k=>[k,params(k)]));
     btn.disabled=true;btn.textContent='计算中…';
     const target=document.getElementById('btResults');target.innerHTML='<p class="audit-note">读取完整日线并对齐评价区间…</p>';
@@ -126,7 +129,8 @@
     const previousCash=previous('planCash'),previousBase=previous('manualGridBase'),previousCapital=previous('planCapital'),previousBatches=previous('planBatchesBought'),previousStage=previous('planTpStage');
     el.dataset.planSymbol=S.sinaSymbol;
     const mrFields=key==='mr'?`<label>该策略原定总预算（元）<input id="planCapital" type="number" min="0.01" step="100" placeholder="每批额度=原定预算÷批数" value="${clean(previousCapital)}"></label>${qty>0?`<label>本轮已完成买入批数<input id="planBatchesBought" type="number" min="1" max="${clean(params('mr').batches)}" step="1" placeholder="按实际成交填写" value="${clean(previousBatches)}"></label><label>本轮已执行止盈阶段<select id="planTpStage"><option value="">请选择实际状态</option>${[['0','尚未止盈'],['1','已执行止盈1'],['2','已执行止盈1和2']].map(x=>`<option value="${x[0]}" ${previousStage===x[0]?'selected':''}>${x[1]}</option>`).join('')}</select></label>`:''}`:'';
-    el.innerHTML=`<h3>条件单参考 · ${clean(labels[key]||'请选择单个策略')}</h3><p class="audit-note">${clean(S.name)} ${clean(S.code)} · 已完成日线截至${clean(S.ohlcv.at(-1)?.time||'—')}<br>真实持仓：${Number.isFinite(qty)?qty:'未录入'}股 / 当前可卖${Number.isFinite(sellable)?sellable:'未录入'}股 / 手动平均成本${cost>0?num(cost)+'元':'未录入'}。修改成本与持仓请使用“自选与持仓”。<br><b>与回测相同：收盘确认信号，下一交易日开盘尝试成交。不能直接改成盘中触价条件单。</b></p><div class="audit-form"><label>本次实际可用资金（元）<input id="planCash" type="number" min="0" step="100" placeholder="填入券商可用资金，可填0" value="${clean(previousCash)}"></label>${mrFields}${key==='grid'?`<label>当前实际网格基准（元）<input id="manualGridBase" type="number" min="0.01" step="0.01" placeholder="默认采用手动持仓成本" value="${clean(previousBase||(cost>0?cost:''))}"></label>`:''}</div>${key==='mr'?'<p class="audit-note">批次和止盈阶段无法由平均成本推断；请按本轮实际成交填写，避免重复买入或重复止盈。首次空仓建仓时，原定总预算可以填写本次可用资金。</p>':''}<button type="button" class="audit-button" id="buildOrderDraft">检查最新日线信号并生成参考</button><div id="orderDraftOutput"></div>`;
+    const chandelierFields=key==='chandelier'&&qty>0?`<label>本轮建仓日期<input id="planEntryDate" type="date" value="${clean(previous('planEntryDate'))}"></label><label>截至上一日线的本轮最高价<input id="planHighestHigh" type="number" min="0.01" step="0.01" placeholder="只统计本轮建仓后的价格" value="${clean(previous('planHighestHigh'))}"></label><label>上一日线的跟踪止损价<input id="planPreviousStop" type="number" min="0" step="0.01" placeholder="按上次已确认的跟踪线填写" value="${clean(previous('planPreviousStop'))}"></label>`:'';
+    el.innerHTML=`<h3>条件单参考 · ${clean(labels[key]||'请选择单个策略')}</h3><p class="audit-note">${clean(S.name)} ${clean(S.code)} · 已完成日线截至${clean(S.ohlcv.at(-1)?.time||'—')}<br>真实持仓：${Number.isFinite(qty)?qty:'未录入'}股 / 当前可卖${Number.isFinite(sellable)?sellable:'未录入'}股 / 手动平均成本${cost>0?num(cost)+'元':'未录入'}。修改成本与持仓请使用“自选与持仓”。<br><b>与回测相同：收盘确认信号，下一交易日开盘尝试成交。不能直接改成盘中触价条件单。</b></p><div class="audit-form"><label>本次实际可用资金（元）<input id="planCash" type="number" min="0" step="100" placeholder="填入券商可用资金，可填0" value="${clean(previousCash)}"></label>${mrFields}${chandelierFields}${key==='grid'?`<label>当前实际网格基准（元）<input id="manualGridBase" type="number" min="0.01" step="0.01" placeholder="默认采用手动持仓成本" value="${clean(previousBase||(cost>0?cost:''))}"></label>`:''}</div>${key==='chandelier'&&qty>0?'<p class="audit-note">最高价与上一止损线需按本轮交易及时维护，至少更新至上一根已完成日线；本次只纳入最新一根，不会自动补算漏更新的多个交易日。</p>':''}${key==='mr'?'<p class="audit-note">批次和止盈阶段无法由平均成本推断；请按本轮实际成交填写，避免重复买入或重复止盈。首次空仓建仓时，原定总预算可以填写本次可用资金。</p>':''}<button type="button" class="audit-button" id="buildOrderDraft">检查最新日线信号并生成参考</button><div id="orderDraftOutput"></div>`;
     lastPlan=null;
     document.getElementById('buildOrderDraft').onclick=()=>buildPlan(key,holding);
   }
@@ -142,6 +146,7 @@
         position.tpStage=document.getElementById('planTpStage')?.value;
       }
       if(key==='grid')position.base=val('manualGridBase',position.avgCost);
+      if(key==='chandelier'&&position.quantity>0){position.entryDate=document.getElementById('planEntryDate').value;position.highestHigh=val('planHighestHigh',NaN);position.previousStop=val('planPreviousStop',NaN);}
       const plan=StockQuant.plan(S.planData||S.ohlcv,key,params(key),position,config());
       const quotedDay=quoteNow?.quoteDate||quoteNow?.quoteTime?.slice(0,10),quotedTime=quoteNow?.quoteTime?.slice(11,16);
       const expired=quotedDay>plan.asOf&&quotedTime>='09:30';
@@ -152,7 +157,7 @@
         renderGridLines(levels,base,'持仓/手动基准');
         plan.rules.push('当前观察买入格线：'+levels.filter(v=>v<base-.000001).reverse().map(v=>num(v)+'元').join('、')+'；卖出格线：'+levels.filter(v=>v>base+.000001).map(v=>num(v)+'元').join('、')+'。这些是收盘穿越观察线，未自动启用任何委托。');
       }
-      const reasonLabels={'mr-batch':'下一批建仓',stop:'成本止损',tp1:'止盈1',tp2:'止盈2',tp3:'止盈3','cross-up':'金叉','cross-down':'死叉',breakout:'高点突破','channel-exit':'低点退出','lower-band':'布林下轨','upper-band':'布林上轨',buy9:'TD做多9',buy13:'TD做多13',sell9:'TD做空9',sell13:'TD做空13','grid-buy':'网格向下穿越','grid-sell':'网格向上穿越'};
+      const reasonLabels={'supertrend-up':'趋势向上翻转','supertrend-down':'趋势向下翻转','momentum-positive':'正动量入场','momentum-nonpositive':'动量退出','chandelier-breakout':'突破入场','chandelier-stop':'吊灯跟踪退出','mr-batch':'下一批建仓',stop:'成本止损',tp1:'止盈1',tp2:'止盈2',tp3:'止盈3','cross-up':'金叉','cross-down':'死叉',breakout:'高点突破','channel-exit':'低点退出','lower-band':'布林下轨','upper-band':'布林上轨',buy9:'TD做多9',buy13:'TD做多13',sell9:'TD做空9',sell13:'TD做空13','grid-buy':'网格向下穿越','grid-sell':'网格向上穿越'};
       const rows=plan.orders.map(order=>{
         const label=reasonLabels[order.reason]||order.reason;
         const condition=`${plan.asOf} 收盘已确认：${label}`;

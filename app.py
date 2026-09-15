@@ -136,7 +136,7 @@ def validate_workspace(body):
                 raise HTTPException(422, '同一组合不能重复添加股票')
             syms.add(sym)
             strategy = asset.get('strategy', 'hold')
-            if strategy not in ['hold', 'mr', 'ma', 'turtle', 'boll', 'td', 'grid']:
+            if strategy not in ['hold', 'mr', 'ma', 'turtle', 'boll', 'td', 'grid', 'supertrend', 'tsmom', 'chandelier']:
                 raise HTTPException(422, '策略不支持')
             params = asset.get('params', {})
             if not isinstance(params, dict) or len(params) > 25:

@@ -77,6 +77,49 @@ test('A-share lot rounding and fee-inclusive affordability preserve the cash led
   assert.equal(r.finalNAV, 9995);
 });
 
+test('STAR Market allocations conservatively buy in 200-share lots even when the caller supplies 100', () => {
+  const input = spec({ initialCash: 3000, assets: [{ symbol: 'sh688001', weight: 100 }],
+    barsBySymbol: { sh688001: data([10, 10, 10]) }, executionOptions: { ...ZERO_COST, lotSize: 100 } });
+  const result = Portfolio.calculate(input);
+  assert.equal(result.perAsset[0].finalShares, 200);
+  assert.equal(result.perAsset[0].finalCash, 1000);
+  assert(result.caveats.some(text => text.includes('200 股档位') && text.includes('1 股递增')));
+  const tooSmall = Portfolio.calculate({ ...input, initialCash: 1500 });
+  assert.equal(tooSmall.perAsset[0].finalShares, 0);
+  assert.equal(tooSmall.perAsset[0].fills.length, 0);
+  const unspecified = Portfolio.calculate({ ...input, executionOptions: { commissionRate: 0, minCommission: 0, stampTaxRate: 0, slippageBps: 0 } });
+  assert.equal(unspecified.perAsset[0].finalShares, 200);
+  const diagnostic = Portfolio.calculate({ ...input, initialCash: 1500, executionOptions: ZERO_COST });
+  assert.equal(diagnostic.perAsset[0].finalShares, 150);
+  assert(!diagnostic.caveats.some(text => text.includes('200 股档位')));
+});
+
+test('portfolio allocation runs all three new strategy accounts with their own parameters', () => {
+  const seen = [];
+  const context = vm.createContext({ StockQuant: { run(rows, strategy, params, options) {
+    seen.push({ strategy, params: { ...params }, initialCash: options.initialCash });
+    return Quant.run(rows, strategy, params, options);
+  } } });
+  vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../portfolio-engine.js'), 'utf8'), context);
+  const cases = [
+    { symbol: 'sh600001', weight: 25, strategy: 'supertrend', params: { atrPeriod: 8, mult: 2 } },
+    { symbol: 'sh600002', weight: 35, strategy: 'tsmom', params: { lookback: 30, volPeriod: 15, targetVol: 12, maxAllocation: 80 } },
+    { symbol: 'sh600003', weight: 40, strategy: 'chandelier', params: { entryPeriod: 20, atrPeriod: 10, mult: 2, riskPct: .5 } }
+  ];
+  const series = Array.from({ length: 300 }, (_, i) => bar(i, 20 + Math.sin(i / 11) * 3 + i * .01));
+  const result = context.StockPortfolio.calculate(spec({ initialCash: 100000, start: day(100), end: day(299), assets: cases,
+    barsBySymbol: Object.fromEntries(cases.map(asset => [asset.symbol, series])) }));
+  assert.deepEqual(seen, cases.map(asset => ({ strategy: asset.strategy, params: asset.params, initialCash: 100000 * asset.weight / 100 })));
+  assert.equal(result.perAsset.length, 3);
+  for (const row of result.perAsset) {
+    assert.equal(row.equity[0].time, day(100));
+    assert.equal(row.equity.at(-1).time, day(299));
+    assert(row.fills.length > 0, row.strategy + ' executes through the shared engine');
+    assert(Number.isFinite(row.totalReturn));
+  }
+  near(result.perAsset.reduce((sum, row) => sum + row.contributionPct, 0), result.totalReturn);
+});
+
 test('unaffordable asset never borrows from another allocation', () => {
   const r = Portfolio.calculate(spec({ assets: [{ symbol: 'A', weight: 90 }, { symbol: 'B', weight: 10 }],
     barsBySymbol: { A: data([10, 10, 10]), B: data([20, 20, 20]) } }));
