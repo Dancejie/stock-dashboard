@@ -1602,12 +1602,14 @@ function updateStockInfo(data, quote) {
 //  DRAGON TIGER BOARD (龙虎榜)
 // ═══════════════════════════════════════════════════════════════
 async function loadDragonTiger() {
+  const requestedSecid = S.secid;
   const el = $('#lhbContent');
   const card = $('#dragonTigerCard');
   if (S.marketType && S.marketType !== 'A') { card.style.display = 'none'; return; }
   card.style.display = '';
   try {
-    const rows = await fetchDragonTiger(S.secid);
+    const rows = await fetchDragonTiger(requestedSecid);
+    if (requestedSecid !== S.secid) return;
     if (!rows || !rows.length) {
       el.innerHTML = '<div class="lhb-empty">近期无龙虎榜数据</div>';
       return;
@@ -1672,6 +1674,7 @@ async function loadDragonTiger() {
 
     el.innerHTML = html;
   } catch (e) {
+    if (requestedSecid !== S.secid) return;
     el.innerHTML = '<div class="lhb-empty">龙虎榜数据加载失败</div>';
   }
 }
@@ -1689,80 +1692,7 @@ async function loadDragonTiger() {
  * Countdown：Setup完成后，C[i] >= H[i-2]（做空13）或 C[i] <= L[i-2]（做多13）计满13次
  * 返回每根K线的标注信息
  */
-function calcTDSequential(data) {
-  const n = data.length;
-  const result = Array.from({ length: n }, () => ({
-    setupBuy: 0, setupSell: 0,       // Setup 计数 1-9
-    cdBuy: 0, cdSell: 0,             // Countdown 计数 1-13
-    signal: null,                    // 'buy9','sell9','buy13','sell13'
-  }));
-
-  let setupBuyCount = 0, setupSellCount = 0;
-  let inCDBuy = false, inCDSell = false;
-  let cdBuyCount = 0, cdSellCount = 0;
-
-  for (let i = 0; i < n; i++) {
-    const c = data[i].close;
-    const c4 = i >= 4 ? data[i - 4].close : null;
-    const h2 = i >= 2 ? data[i - 2].high : null;
-    const l2 = i >= 2 ? data[i - 2].low : null;
-
-    // ── Setup ──
-    if (c4 !== null) {
-      if (c < c4) {
-        setupBuyCount = Math.min(setupBuyCount + 1, 9);
-        setupSellCount = 0;
-      } else if (c > c4) {
-        setupSellCount = Math.min(setupSellCount + 1, 9);
-        setupBuyCount = 0;
-      } else {
-        setupBuyCount = 0;
-        setupSellCount = 0;
-      }
-    }
-
-    result[i].setupBuy  = setupBuyCount  > 0 && !inCDBuy  ? setupBuyCount  : 0;
-    result[i].setupSell = setupSellCount > 0 && !inCDSell ? setupSellCount : 0;
-
-    // Setup 完成 → 进入 Countdown
-    if (setupBuyCount === 9 && !inCDBuy) {
-      inCDBuy = true; cdBuyCount = 0;
-      result[i].signal = 'buy9';
-    }
-    if (setupSellCount === 9 && !inCDSell) {
-      inCDSell = true; cdSellCount = 0;
-      result[i].signal = result[i].signal ? result[i].signal + '+sell9' : 'sell9';
-    }
-
-    // ── Countdown ──
-    if (inCDBuy && l2 !== null) {
-      if (c <= l2) {
-        cdBuyCount++;
-        result[i].cdBuy = cdBuyCount;
-        if (cdBuyCount === 13) {
-          result[i].signal = 'buy13';
-          inCDBuy = false; cdBuyCount = 0;
-        }
-      }
-    }
-    if (inCDSell && h2 !== null) {
-      if (c >= h2) {
-        cdSellCount++;
-        result[i].cdSell = cdSellCount;
-        if (cdSellCount === 13) {
-          result[i].signal = result[i].signal ? result[i].signal + '+sell13' : 'sell13';
-          inCDSell = false; cdSellCount = 0;
-        }
-      }
-    }
-
-    // 反向 Setup 出现 → 重置对应 Countdown
-    if (setupSellCount >= 9 && inCDBuy) { inCDBuy = false; cdBuyCount = 0; }
-    if (setupBuyCount  >= 9 && inCDSell) { inCDSell = false; cdSellCount = 0; }
-  }
-
-  return result;
-}
+function calcTDSequential(data) { return StockQuant.calcTDSequential(data); }
 
 // TD 序列回测策略：
 // - buy9/buy13 信号出现 → 次日开盘买入（满仓95%）
@@ -1995,7 +1925,7 @@ searchInput.addEventListener('input', (e) => {
       if (seq !== S.searchSeq || searchInput.value.trim() !== val) return;
       renderSuggestions(results);
     } catch {
-      sugBox.style.display = 'none';
+      if (seq === S.searchSeq) sugBox.style.display = 'none';
     }
   }, 300);
 });

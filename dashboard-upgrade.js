@@ -185,10 +185,12 @@
       S.activeInd=null;document.querySelectorAll('#indicatorTabs button').forEach(b=>b.classList.remove('active'));document.getElementById('indicatorChartWrap').classList.remove('open');
       document.getElementById('updateTime').textContent=q?'行情截至 '+q.quoteTime:'已完成日线截至 '+pack.meta.actualEnd;
       document.getElementById('chartPrice').textContent=num(q?.price||S.ohlcv.at(-1).close);
-      if(q)document.getElementById('chartChange').textContent=pct(q.changePct);
+      const last=S.ohlcv.at(-1),previous=S.ohlcv.at(-2)||last,change=q?q.price-q.prevClose:last.close-previous.close,changePct=q?q.changePct:change/previous.close*100;
+      document.getElementById('chartChange').textContent=(change>0?'+':'')+num(change)+'  '+pct(changePct);
+      document.getElementById('chartPrice').style.color=colorForChange(change);document.getElementById('chartChange').style.color=colorForChange(change);
       loadDragonTiger();
       renderPlan();window.dispatchEvent(new CustomEvent('stock-selection-change',{detail:{symbol:S.sinaSymbol,name:S.name}}));
-    }catch(e){if(version===requestVersion)toast(e.message);}
+    }catch(e){if(version===requestVersion){S.ohlcv=[];S.planData=[];S.charts.main?.remove();S.charts.main=null;S.series={};document.getElementById('chartName').textContent=S.name;document.getElementById('chartPrice').textContent='—';document.getElementById('chartChange').textContent='行情加载失败';document.getElementById('siName').textContent=S.name;document.getElementById('siPrice').textContent='—';document.getElementById('siChange').textContent='行情加载失败';document.getElementById('siGrid').replaceChildren();toast(e.message);}}
     finally{if(version===requestVersion)hideLoading();}
   }
   window.StockApp={getCurrent:()=>({symbol:S.sinaSymbol,name:S.name,code:S.code,price:quoteNow?.price||S.ohlcv.at(-1)?.close}),getBars,
