@@ -1,0 +1,2 @@
+# Unified diff context lines must retain their leading space (including empty lines).
+public-overlay/*.patch whitespace=-blank-at-eol

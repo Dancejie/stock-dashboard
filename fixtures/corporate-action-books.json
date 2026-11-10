@@ -1,0 +1,89 @@
+[
+  {
+    "symbol": "sh603099",
+    "name": "长白山",
+    "coverageStart": "2025-06-16",
+    "coverageEnd": "2025-07-02",
+    "source": "https://static.cninfo.com.cn/finalpage/2025-06-13/1223859419.PDF",
+    "events": [
+      {
+        "id": "603099-2025-034",
+        "symbol": "sh603099",
+        "title": "长白山旅游股份有限公司2024年年度权益分派实施公告",
+        "recordDate": "2025-06-19",
+        "exDate": "2025-06-20",
+        "payDate": "2025-06-20",
+        "shareListingDate": null,
+        "cashPerShare": 0.0815,
+        "sharesPerShare": 0,
+        "shareKind": "none",
+        "source": "https://static.cninfo.com.cn/finalpage/2025-06-13/1223859419.PDF",
+        "announcementDate": "2025-06-13",
+        "sha256": "28bc070b18708912a8204bd135baf131118fd02ef386a592dc366f0b29f738b9"
+      }
+    ]
+  },
+  {
+    "symbol": "sh688556",
+    "name": "高测股份",
+    "coverageStart": "2025-06-16",
+    "coverageEnd": "2025-07-02",
+    "source": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935346.PDF",
+    "events": [
+      {
+        "id": "688556-2025-035",
+        "symbol": "sh688556",
+        "title": "青岛高测科技股份有限公司2024年年度权益分派实施公告",
+        "recordDate": "2025-06-26",
+        "exDate": "2025-06-27",
+        "payDate": "2025-06-27",
+        "shareListingDate": "2025-06-27",
+        "cashPerShare": 0.18,
+        "sharesPerShare": 0.4,
+        "shareKind": "capitalization",
+        "source": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935346.PDF",
+        "announcementDate": "2025-06-20",
+        "sha256": "5fecb694731d3a06d91daf2ad547f100cb40ec9e7d338ea741148999d60fc064"
+      }
+    ]
+  },
+  {
+    "symbol": "sz002780",
+    "name": "三夫户外",
+    "coverageStart": "2026-05-25",
+    "coverageEnd": "2026-11-10",
+    "source": "https://static.cninfo.com.cn/finalpage/2026-05-27/1225331603.PDF",
+    "events": [
+      {
+        "id": "002780-2026-027",
+        "symbol": "sz002780",
+        "title": "北京三夫户外用品股份有限公司2025年度权益分派实施公告",
+        "recordDate": "2026-06-02",
+        "exDate": "2026-06-03",
+        "payDate": "2026-06-03",
+        "shareListingDate": null,
+        "cashPerShare": 0.05,
+        "sharesPerShare": 0,
+        "shareKind": "none",
+        "source": "https://static.cninfo.com.cn/finalpage/2026-05-27/1225331603.PDF",
+        "announcementDate": "2026-05-27",
+        "sha256": "cf3a0c56eb175078d6a80e314451b4f8166e4c6dacb19ecb25b34e6bb7f9feb7"
+      },
+      {
+        "id": "002780-2026-048",
+        "symbol": "sz002780",
+        "title": "北京三夫户外用品股份有限公司2026年半年度权益分派实施公告",
+        "recordDate": "2026-09-21",
+        "exDate": "2026-09-22",
+        "payDate": "2026-09-22",
+        "shareListingDate": null,
+        "cashPerShare": 0.02,
+        "sharesPerShare": 0,
+        "shareKind": "none",
+        "source": "https://static.cninfo.com.cn/finalpage/2026-09-15/1225564252.PDF",
+        "announcementDate": "2026-09-15",
+        "sha256": "2b0d61b4ad2f812b1559d0a5764f67bc67bff3dac937729b7896d945625b67e7"
+      }
+    ]
+  }
+]

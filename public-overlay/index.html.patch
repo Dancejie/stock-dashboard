@@ -1,0 +1,400 @@
+--- index.html
++++ index.html
+@@ -3,7 +3,9 @@
+ <head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+-<title>交易看板</title>
++<title>投资策略组合 · 交易看板</title>
++<meta name="description" content="九种量化策略、真实行情与组合回测。自选、手填持仓和组合保存在你的浏览器中。">
++<link rel="icon" href="../../favicon.svg" type="image/svg+xml">
+ <script src="./lightweight-charts-4.1.7.js"></script>
+ <style>
+ *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+@@ -15,10 +17,10 @@
+   --text-primary: #F5F0E8;
+   --text-secondary: #8B949E;
+   --text-muted: #6E7681;
+-  --gold: #C9A84C;
+-  --green: #4CAF7D;
+-  --red: #E05252;
+-  --blue: #58A6FF;
++  --gold: #8a4b38;
++  --green: #247b5a;
++  --red: #bb493e;
++  --blue: #3b6b96;
+ }
+ html, body { height: 100%; }
+ body {
+@@ -30,6 +32,12 @@
+   overflow-x: hidden;
+ }
+ #app { display: flex; flex-direction: column; height: 100vh; }
++
++.portfolio-back { color: var(--text-secondary); text-decoration: none; white-space: nowrap; font-size: 12px; }
++.portfolio-back:hover { color: var(--gold); }
++.portfolio-back:focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; }
++.visitor-note { padding: 7px 20px; color: var(--text-secondary); background: var(--bg-primary); border-bottom: 1px solid var(--border); font-size: 11px; flex-shrink: 0; }
++@media (max-width: 1024px) { #topbar { flex-wrap: wrap; } #topbar h1 { font-size: 15px; } .visitor-note { padding: 7px 12px; } }
+ 
+ /* ── Top Bar ── */
+ #topbar {
+@@ -666,20 +674,24 @@
+   #updateTime { order: 2; }
+ }
+ </style>
+-<link rel="stylesheet" href="./workspace-ui.css">
+-<link rel="stylesheet" href="./dashboard-upgrade.css">
++<link rel="stylesheet" href="./workspace-ui.css?v=8">
++<link rel="stylesheet" href="./dashboard-upgrade.css?v=8">
++<link rel="stylesheet" href="./portfolio-ui.css?v=11">
+ </head>
+ <body>
+-<div id="app">
++<a class="skip-link" href="#content">跳至看板</a>
++<div id="app" data-mobile-view="market">
+   <!-- Top Bar -->
+   <header id="topbar">
+-    <h1>交易看板</h1>
++    <a class="portfolio-back" href="../../markets/" aria-label="返回量化与市场">← 量化与市场</a>
++    <div class="dashboard-title"><span class="dashboard-kicker">DANCE / QUANT LAB</span><h1>投资策略组合<span>交易看板</span></h1></div>
+     <div class="search-wrap">
+-      <input type="text" id="searchInput" placeholder="输入股票代码或名称 (如 000426, 兴业银锡)" autocomplete="off">
++      <input type="text" id="searchInput" aria-label="搜索股票代码或名称" placeholder="搜索股票名称或代码" enterkeyhint="search" autocomplete="off">
+       <div id="searchSuggestions"></div>
+     </div>
+     <span id="updateTime"></span>
+   </header>
++  <div class="visitor-note"><span>公开研究工具</span> 行情可能延迟 · 自选与组合仅保存在此浏览器</div>
+ 
+   <!-- Main -->
+   <main id="content">
+@@ -692,22 +704,23 @@
+           <span class="change" id="chartChange"></span>
+         </div>
+         <div class="btn-group" id="rangeButtons">
+-          <button data-range="1mo">1M</button>
+-          <button data-range="3mo">3M</button>
+-          <button data-range="6mo">6M</button>
+-          <button data-range="1y" class="active">1Y</button>
+-          <button data-range="3y">3Y</button>
+-          <button data-range="6y">6Y</button>
++          <button data-range="1mo">1月</button>
++          <button data-range="3mo">3月</button>
++          <button data-range="6mo">6月</button>
++          <button data-range="1y" class="active">1年</button>
++          <button data-range="3y">3年</button>
++          <button data-range="6y">6年</button>
+         </div>
+       </div>
+       <!-- MA 均线控制条 -->
++      <details class="chart-settings"><summary>均线与叠加指标<span>展开设置</span></summary>
+       <div id="maOverlayBar" style="display:flex;align-items:center;gap:6px;padding:6px 8px 4px;flex-wrap:wrap;">
+         <span style="font-size:10px;color:var(--text-muted);margin-right:2px;">均线</span>
+-        <button class="ma-toggle active" data-period="5"   style="--mc:#C9A84C" onclick="toggleMA(this,5)">MA5</button>
+-        <button class="ma-toggle"        data-period="10"  style="--mc:#58A6FF" onclick="toggleMA(this,10)">MA10</button>
+-        <button class="ma-toggle active" data-period="20"  style="--mc:#F0883E" onclick="toggleMA(this,20)">MA20</button>
+-        <button class="ma-toggle"        data-period="60"  style="--mc:#BC8CFF" onclick="toggleMA(this,60)">MA60</button>
+-        <button class="ma-toggle"        data-period="120" style="--mc:#7EE787" onclick="toggleMA(this,120)">MA120</button>
++        <button class="ma-toggle active" data-period="5"   style="--mc:#8a4b38" onclick="toggleMA(this,5)">MA5</button>
++        <button class="ma-toggle"        data-period="10"  style="--mc:#3b6b96" onclick="toggleMA(this,10)">MA10</button>
++        <button class="ma-toggle active" data-period="20"  style="--mc:#ba6a32" onclick="toggleMA(this,20)">MA20</button>
++        <button class="ma-toggle"        data-period="60"  style="--mc:#76609b" onclick="toggleMA(this,60)">MA60</button>
++        <button class="ma-toggle"        data-period="120" style="--mc:#28785d" onclick="toggleMA(this,120)">MA120</button>
+         <span style="display:flex;align-items:center;gap:3px;margin-left:4px;">
+           <span style="font-size:10px;color:var(--text-muted);">自定义</span>
+           <input id="maCustomInput" type="number" min="2" max="500" value="" placeholder="如250"
+@@ -716,9 +729,11 @@
+           <button onclick="clearCustomMAs()" style="font-size:10px;padding:2px 4px;background:transparent;border:1px solid var(--border);border-radius:3px;color:var(--text-muted);cursor:pointer;">清除</button>
+         </span>
+       </div>
+-      <div id="mainChartWrap">
++      </details>
++      <div id="mainChartWrap" aria-label="股票日线与成交量图表">
+         <div id="chartTooltip"></div>
+       </div>
++      <p class="chart-touch-note">长按查看价格 · 横向拖动查看历史</p>
+       <div class="ind-tabs" id="indicatorTabs">
+         <button data-ind="macd">MACD</button>
+         <button data-ind="rsi">RSI</button>
+@@ -751,56 +766,56 @@
+ 
+         <!-- Strategy Cards -->
+         <div class="strategy-cards">
+-          <div class="strat-card active" data-strat="mr" onclick="selectStrategy(this,'mr')">
++          <button type="button" class="strat-card active" data-strat="mr" onclick="selectStrategy(this,'mr')">
+             <div class="strat-icon">📊</div>
+             <div class="strat-name">均值回归</div>
+             <div class="strat-desc">偏离SMA60超阈值分批建仓</div>
+-          </div>
+-          <div class="strat-card" data-strat="turtle" onclick="selectStrategy(this,'turtle')">
++          </button>
++          <button type="button" class="strat-card" data-strat="turtle" onclick="selectStrategy(this,'turtle')">
+             <div class="strat-icon">🐢</div>
+             <div class="strat-name">海龟突破</div>
+             <div class="strat-desc">20日高点突破，2%风险仓位</div>
+-          </div>
+-          <div class="strat-card" data-strat="ma" onclick="selectStrategy(this,'ma')">
++          </button>
++          <button type="button" class="strat-card" data-strat="ma" onclick="selectStrategy(this,'ma')">
+             <div class="strat-icon">📈</div>
+             <div class="strat-name">双均线</div>
+             <div class="strat-desc">MA5上穿MA20买入，下穿卖出</div>
+-          </div>
+-          <div class="strat-card" data-strat="boll" onclick="selectStrategy(this,'boll')">
++          </button>
++          <button type="button" class="strat-card" data-strat="boll" onclick="selectStrategy(this,'boll')">
+             <div class="strat-icon">🎯</div>
+             <div class="strat-name">布林突破</div>
+             <div class="strat-desc">触下轨买入，触上轨止盈</div>
+-          </div>
+-          <div class="strat-card" data-strat="grid" onclick="selectStrategy(this,'grid')">
++          </button>
++          <button type="button" class="strat-card" data-strat="grid" onclick="selectStrategy(this,'grid')">
+             <div class="strat-icon">🔲</div>
+             <div class="strat-name">网格策略</div>
+             <div class="strat-desc">基准价上下挂网格，震荡套利</div>
+-          </div>
+-          <div class="strat-card" data-strat="td" onclick="selectStrategy(this,'td')">
++          </button>
++          <button type="button" class="strat-card" data-strat="td" onclick="selectStrategy(this,'td')">
+             <div class="strat-icon">🔢</div>
+             <div class="strat-name">TD序列</div>
+             <div class="strat-desc">9/13反转信号，K线标注计数</div>
+-          </div>
+-          <div class="strat-card" data-strat="supertrend" onclick="selectStrategy(this,'supertrend')">
++          </button>
++          <button type="button" class="strat-card" data-strat="supertrend" onclick="selectStrategy(this,'supertrend')">
+             <div class="strat-icon">↗</div>
+             <div class="strat-name">超级趋势</div>
+             <div class="strat-desc">ATR趋势翻转，做多或离场</div>
+-          </div>
+-          <div class="strat-card" data-strat="tsmom" onclick="selectStrategy(this,'tsmom')">
++          </button>
++          <button type="button" class="strat-card" data-strat="tsmom" onclick="selectStrategy(this,'tsmom')">
+             <div class="strat-icon">〰</div>
+             <div class="strat-name">波动率约束动量</div>
+             <div class="strat-desc">正动量入场，按波动率定初仓</div>
+-          </div>
+-          <div class="strat-card" data-strat="chandelier" onclick="selectStrategy(this,'chandelier')">
++          </button>
++          <button type="button" class="strat-card" data-strat="chandelier" onclick="selectStrategy(this,'chandelier')">
+             <div class="strat-icon">⌁</div>
+             <div class="strat-name">突破 + 吊灯止损</div>
+             <div class="strat-desc">55日突破，单调跟踪止损</div>
+-          </div>
+-          <div class="strat-card" data-strat="all" onclick="selectStrategy(this,'all')">
++          </button>
++          <button type="button" class="strat-card" data-strat="all" onclick="selectStrategy(this,'all')">
+             <div class="strat-icon">⚡</div>
+             <div class="strat-name">全部对比</div>
+             <div class="strat-desc">同时运行9种策略，横向对比</div>
+-          </div>
++          </button>
+         </div>
+ 
+         <!-- Parameter Toggle -->
+@@ -966,6 +981,11 @@
+       </div>
+     </div>
+   </main>
++  <nav class="mobile-nav" aria-label="量化看板导航">
++    <button type="button" data-view="market" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M5 15l4-5 4 3 6-8"/></svg><span>行情</span></button>
++    <button type="button" data-view="strategy"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9m7 10V4m7 15v-7M3 20h18"/></svg><span>策略</span></button>
++    <button type="button" data-view="workspace"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="7" width="16" height="13" rx="3"/><path d="M8 7V4h8v3M4 12h16"/></svg><span>我的组合</span></button>
++  </nav>
+ </div>
+ 
+ <!-- Loading Overlay -->
+@@ -1218,15 +1238,15 @@
+ //  CHART CREATION & UPDATE
+ // ═══════════════════════════════════════════════════════════════
+ const chartColors = {
+-  bg: '#0D1117',
+-  gridLine: 'rgba(48,54,61,0.4)',
+-  crosshair: 'rgba(201,168,76,0.4)',
+-  upColor: '#E05252',
+-  downColor: '#4CAF7D',
+-  upBorder: '#E05252',
+-  downBorder: '#4CAF7D',
+-  wickUp: '#E05252',
+-  wickDown: '#4CAF7D',
++  bg: '#FFFFFF',
++  gridLine: '#eef0f1',
++  crosshair: '#8a4b3880',
++  upColor: '#bb493e',
++  downColor: '#247b5a',
++  upBorder: '#bb493e',
++  downBorder: '#247b5a',
++  wickUp: '#bb493e',
++  wickDown: '#247b5a',
+ };
+ 
+ function createMainChart() {
+@@ -1238,26 +1258,29 @@
+     height: container.clientHeight || 360,
+     layout: {
+       background: { color: chartColors.bg },
+-      textColor: '#8B949E',
++      textColor: '#72757c',
+       fontFamily: "'Inter', system-ui, sans-serif",
+-      fontSize: 11,
++      fontSize: 12,
+     },
++    handleScroll: { vertTouchDrag: false, horzTouchDrag: true },
++    handleScale: { pinch: true, mouseWheel: true },
+     grid: {
+       vertLines: { color: chartColors.gridLine },
+       horzLines: { color: chartColors.gridLine },
+     },
+     crosshair: {
+       mode: LightweightCharts.CrosshairMode.Normal,
+-      vertLine: { color: chartColors.crosshair, labelBackgroundColor: '#C9A84C' },
+-      horzLine: { color: chartColors.crosshair, labelBackgroundColor: '#C9A84C' },
++      vertLine: { color: chartColors.crosshair, labelBackgroundColor: '#8a4b38' },
++      horzLine: { color: chartColors.crosshair, labelBackgroundColor: '#8a4b38' },
+     },
+     rightPriceScale: {
+-      borderColor: '#30363D',
++      borderColor: '#e6e7e8',
+       scaleMargins: { top: 0.05, bottom: 0.2 },
+     },
+     timeScale: {
+-      borderColor: '#30363D',
++      borderColor: '#e6e7e8',
+       timeVisible: false,
++      lockVisibleTimeRangeOnResize: true,
+     },
+   });
+ 
+@@ -1305,8 +1328,8 @@
+     const bw = container.clientWidth;
+     let x = param.point.x + 16;
+     if (x + 180 > bw) x = param.point.x - 180;
+-    tooltip.style.left = x + 'px';
+-    tooltip.style.top = Math.max(0, param.point.y - 60) + 'px';
++    tooltip.style.left = Math.max(4, Math.min(x, bw - tooltip.offsetWidth - 4)) + 'px';
++    tooltip.style.top = Math.max(0, Math.min(param.point.y - 60, container.clientHeight - tooltip.offsetHeight)) + 'px';
+   });
+ 
+   S.charts.main = chart;
+@@ -1352,16 +1375,17 @@
+     height: 150,
+     layout: {
+       background: { color: chartColors.bg },
+-      textColor: '#8B949E',
++      textColor: '#72757c',
+       fontFamily: "'Inter', system-ui, sans-serif",
+-      fontSize: 10,
++      fontSize: 12,
+     },
++    handleScroll: { vertTouchDrag: false, horzTouchDrag: true },
+     grid: {
+       vertLines: { color: chartColors.gridLine },
+       horzLines: { color: chartColors.gridLine },
+     },
+-    rightPriceScale: { borderColor: '#30363D' },
+-    timeScale: { borderColor: '#30363D', visible: false },
++    rightPriceScale: { borderColor: '#e6e7e8' },
++    timeScale: { borderColor: '#e6e7e8', visible: false },
+     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+   });
+   S.charts.indicator = chart;
+@@ -1382,10 +1406,10 @@
+     color: hist[i] >= 0 ? 'rgba(224,82,82,0.6)' : 'rgba(76,175,125,0.6)',
+   })));
+ 
+-  const macdSeries = chart.addLineSeries({ color: '#58A6FF', lineWidth: 1.5, priceFormat: { precision: 4, minMove: 0.0001 } });
++  const macdSeries = chart.addLineSeries({ color: '#3b6b96', lineWidth: 1.5, priceFormat: { precision: 4, minMove: 0.0001 } });
+   macdSeries.setData(S.ohlcv.map((d, i) => ({ time: d.time, value: macdLine[i] })));
+ 
+-  const signalSeries = chart.addLineSeries({ color: '#C9A84C', lineWidth: 1.5, priceFormat: { precision: 4, minMove: 0.0001 } });
++  const signalSeries = chart.addLineSeries({ color: '#8a4b38', lineWidth: 1.5, priceFormat: { precision: 4, minMove: 0.0001 } });
+   signalSeries.setData(S.ohlcv.map((d, i) => ({ time: d.time, value: signal[i] })));
+ 
+   chart.timeScale().fitContent();
+@@ -1397,7 +1421,7 @@
+   const closes = S.ohlcv.map(d => d.close);
+   const rsi = calcRSI(closes, 14);
+ 
+-  const rsiSeries = chart.addLineSeries({ color: '#C9A84C', lineWidth: 1.5 });
++  const rsiSeries = chart.addLineSeries({ color: '#8a4b38', lineWidth: 1.5 });
+   rsiSeries.setData(S.ohlcv.map((d, i) => ({ time: d.time, value: rsi[i] })).filter(d => d.value != null));
+ 
+   // 70 / 30 lines
+@@ -1433,11 +1457,11 @@
+ //  MA OVERLAY ON MAIN CHART
+ // ═══════════════════════════════════════════════════════════════
+ const MA_COLORS = {
+-  5:   '#C9A84C',  // 黄
+-  10:  '#58A6FF',  // 蓝
+-  20:  '#F0883E',  // 橙
+-  60:  '#BC8CFF',  // 紫
+-  120: '#7EE787',  // 绿
++  5:   '#8a4b38',  // 黄
++  10:  '#3b6b96',  // 蓝
++  20:  '#ba6a32',  // 橙
++  60:  '#76609b',  // 紫
++  120: '#28785d',  // 绿
+ };
+ const MA_CUSTOM_COLORS = ['#FF7B72','#79C0FF','#FFA657','#D2A8FF','#56D364','#E3B341','#F78166'];
+ let _maCustomColorIdx = 0;
+@@ -1813,7 +1837,7 @@
+       markers.push({
+         time: d.time,
+         position: 'belowBar',
+-        color: td.setupBuy === 9 ? '#4CAF7D' : 'rgba(76,175,125,0.55)',
++        color: td.setupBuy === 9 ? '#247b5a' : 'rgba(76,175,125,0.55)',
+         shape: td.setupBuy === 9 ? 'arrowUp' : 'circle',
+         text: String(td.setupBuy),
+         size: td.setupBuy === 9 ? 1 : 0,
+@@ -1823,7 +1847,7 @@
+       markers.push({
+         time: d.time,
+         position: 'aboveBar',
+-        color: td.setupSell === 9 ? '#E05252' : 'rgba(224,82,82,0.55)',
++        color: td.setupSell === 9 ? '#bb493e' : 'rgba(224,82,82,0.55)',
+         shape: td.setupSell === 9 ? 'arrowDown' : 'circle',
+         text: String(td.setupSell),
+         size: td.setupSell === 9 ? 1 : 0,
+@@ -1896,15 +1920,15 @@
+ function handleResize() {
+   if (S.charts.main) {
+     const c = $('#mainChartWrap');
+-    S.charts.main.resize(c.clientWidth, c.clientHeight || 360);
++    if (c.clientWidth) S.charts.main.resize(c.clientWidth, c.clientHeight || 360);
+   }
+   if (S.charts.indicator) {
+     const c = $('#indicatorChartWrap');
+-    S.charts.indicator.resize(c.clientWidth, 150);
++    if (c.clientWidth) S.charts.indicator.resize(c.clientWidth, 150);
+   }
+   if (S.charts.btEquity) {
+     const c = $('#btEquityChartWrap');
+-    S.charts.btEquity.resize(c.clientWidth, 130);
++    if (c.clientWidth) S.charts.btEquity.resize(c.clientWidth, 130);
+   }
+ }
+ 
+@@ -2078,15 +2102,18 @@
+ </script>
+ <script src="./historical-rules.js"></script>
+ <script src="./corporate-actions.js"></script>
+-<script src="./quant-core.js"></script>
++<script src="./quant-core.js?v=20261110"></script>
+ <script src="./portfolio-ledger.js"></script>
+ <script src="./ledger-adapter.js"></script>
+ <script src="./holdout.js"></script>
+ <script src="./holdout-ui.js"></script>
+ <script src="./portfolio-engine.js"></script>
+-<script src="./workspace-ui.js"></script>
++<script src="./local-workspace.js"></script>
++<script src="./responsive-chart.js?v=8"></script>
++<script src="./workspace-ui.js?v=20261110"></script>
+ <script src="./market-client.js"></script>
+ <script src="./market-search.js"></script>
+-<script src="./dashboard-upgrade.js"></script>
++<script src="./dashboard-upgrade.js?v=20261110"></script>
++<script src="./mobile-ui.js?v=8"></script>
+ </body>
+ </html>
