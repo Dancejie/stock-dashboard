@@ -1,0 +1,312 @@
+{
+  "sample": {
+    "mode": "shares",
+    "rebalance": "monthly",
+    "start": "2025-06-16",
+    "end": "2025-07-02",
+    "initialCash": 5000,
+    "assets": [
+      {
+        "symbol": "sh603099",
+        "name": "长白山",
+        "quantity": 1000,
+        "sellableQty": 1000,
+        "weight": 45
+      },
+      {
+        "symbol": "sh688556",
+        "name": "高测股份",
+        "quantity": 2000,
+        "sellableQty": 2000,
+        "weight": 45
+      }
+    ],
+    "executionOptions": {
+      "commissionRate": 0.0003,
+      "minCommission": 5,
+      "slippageBps": 5
+    }
+  },
+  "priceAdjustment": "raw_only",
+  "priceFixtureHash": "b833e99c831bb14cc896698f7895fc801584e88b132184d058e590a971d6f81e",
+  "filings": {
+    "sh603099": "https://static.cninfo.com.cn/finalpage/2025-06-13/1223859419.PDF",
+    "sh688556": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935346.PDF"
+  },
+  "priceSources": {
+    "sh603099": {
+      "tencent": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh603099%2Cday%2C2025-06-13%2C2025-07-02%2C100%2C",
+      "eastmoney": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.603099&klt=101&fqt=0&beg=20250613&end=20250702&lmt=30&fields1=f1%2Cf2%2Cf3&fields2=f51%2Cf52%2Cf53%2Cf54%2Cf55%2Cf56"
+    },
+    "sh688556": {
+      "tencent": "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh688556%2Cday%2C2025-06-13%2C2025-07-02%2C100%2C",
+      "eastmoney": "https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.688556&klt=101&fqt=0&beg=20250613&end=20250702&lmt=30&fields1=f1%2Cf2%2Cf3&fields2=f51%2Cf52%2Cf53%2Cf54%2Cf55%2Cf56"
+    }
+  },
+  "sourceOHLCAssertions": 112,
+  "dailyAndFillAssertions": 161,
+  "realTradingDays": 13,
+  "uniqueHeldCorporateActions": 2,
+  "cashDividendPayments": 2,
+  "capitalizationEvents": 1,
+  "grossCashDividends": "441.50",
+  "bonusShares": 800,
+  "rebalances": [
+    {
+      "type": "monthly",
+      "signalDate": "2025-06-30",
+      "executionDate": "2025-07-01",
+      "orders": [
+        {
+          "symbol": "sh603099",
+          "side": "sell",
+          "requestedQty": 248,
+          "liquidate": false
+        },
+        {
+          "symbol": "sh688556",
+          "side": "buy",
+          "requestedQty": 1186,
+          "liquidate": false
+        }
+      ],
+      "fillCount": 2
+    }
+  ],
+  "fills": [
+    {
+      "time": "2025-07-01",
+      "signalDate": "2025-06-30",
+      "symbol": "sh603099",
+      "side": "sell",
+      "quantity": 200,
+      "openPrice": "38.06",
+      "price": "38.04",
+      "slippageCost": 4,
+      "amount": 7608,
+      "commission": 5,
+      "stampTax": "3.8",
+      "transferFee": "0.08",
+      "totalFees": "8.88"
+    },
+    {
+      "time": "2025-07-01",
+      "signalDate": "2025-06-30",
+      "symbol": "sh688556",
+      "side": "buy",
+      "quantity": 1186,
+      "openPrice": "7.12",
+      "price": "7.12",
+      "slippageCost": 0,
+      "amount": "8444.32",
+      "commission": 5,
+      "stampTax": 0,
+      "transferFee": "0.08",
+      "totalFees": "5.08"
+    }
+  ],
+  "initialNAV": 59090,
+  "finalNAV": "65728.88",
+  "buyHoldFinalNAV": "65909.5",
+  "totalCash": "4591.22",
+  "totalFees": "13.96",
+  "maxDailyNAVErrorCNY": "0.00",
+  "daily": [
+    {
+      "date": "2025-06-16",
+      "engineNAV": "59090",
+      "independentNAV": "59090.00",
+      "cash": "5000",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "59090.00"
+    },
+    {
+      "date": "2025-06-17",
+      "engineNAV": "59280",
+      "independentNAV": "59280.00",
+      "cash": "5000",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "59280.00"
+    },
+    {
+      "date": "2025-06-18",
+      "engineNAV": "58910",
+      "independentNAV": "58910.00",
+      "cash": "5000",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "58910.00"
+    },
+    {
+      "date": "2025-06-19",
+      "engineNAV": "59900",
+      "independentNAV": "59900.00",
+      "cash": "5000",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "59900.00"
+    },
+    {
+      "date": "2025-06-20",
+      "engineNAV": "59471.5",
+      "independentNAV": "59471.50",
+      "cash": "5081.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "59471.50"
+    },
+    {
+      "date": "2025-06-23",
+      "engineNAV": "60211.5",
+      "independentNAV": "60211.50",
+      "cash": "5081.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "60211.50"
+    },
+    {
+      "date": "2025-06-24",
+      "engineNAV": "61261.5",
+      "independentNAV": "61261.50",
+      "cash": "5081.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "61261.50"
+    },
+    {
+      "date": "2025-06-25",
+      "engineNAV": "62021.5",
+      "independentNAV": "62021.50",
+      "cash": "5081.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "62021.50"
+    },
+    {
+      "date": "2025-06-26",
+      "engineNAV": "64021.5",
+      "independentNAV": "64021.50",
+      "cash": "5081.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2000
+      },
+      "buyHoldNAV": "64021.50"
+    },
+    {
+      "date": "2025-06-27",
+      "engineNAV": "63051.5",
+      "independentNAV": "63051.50",
+      "cash": "5441.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2800
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2800
+      },
+      "buyHoldNAV": "63051.50"
+    },
+    {
+      "date": "2025-06-30",
+      "engineNAV": "63605.5",
+      "independentNAV": "63605.50",
+      "cash": "5441.50",
+      "shares": {
+        "sh603099": 1000,
+        "sh688556": 2800
+      },
+      "sellable": {
+        "sh603099": 1000,
+        "sh688556": 2800
+      },
+      "buyHoldNAV": "63605.50"
+    },
+    {
+      "date": "2025-07-01",
+      "engineNAV": "64419.12",
+      "independentNAV": "64419.12",
+      "cash": "4591.22",
+      "shares": {
+        "sh603099": 800,
+        "sh688556": 3986
+      },
+      "sellable": {
+        "sh603099": 800,
+        "sh688556": 2800
+      },
+      "buyHoldNAV": "64621.50"
+    },
+    {
+      "date": "2025-07-02",
+      "engineNAV": "65728.88",
+      "independentNAV": "65728.88",
+      "cash": "4591.22",
+      "shares": {
+        "sh603099": 800,
+        "sh688556": 3986
+      },
+      "sellable": {
+        "sh603099": 800,
+        "sh688556": 3986
+      },
+      "buyHoldNAV": "65909.50"
+    }
+  ],
+  "limitation": "One 13-session accounting example, not a profitability or broker-fill test. Gross dividends; individual sale-time withholding is excluded. Volumes are not compared across vendor units."
+}

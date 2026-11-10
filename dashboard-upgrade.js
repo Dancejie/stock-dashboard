@@ -34,7 +34,7 @@
   function config() {
     return {initialCash:val('btCash',1000000),commissionRate:val('btCommission',.03)/100,
       minCommission:val('btMinFee',5),stampTaxRate:val('btTax',.05)/100,slippageBps:val('btSlip',5),lotSize:/^sh688/.test(S.sinaSymbol)?200:100,
-      limitPct: /^(sz30|sh68)/.test(S.sinaSymbol)?20:10,riskFreeRate:val('btRf',0)/100};
+      ruleMode: document.getElementById('btRuleMode')?.value || 'fixed',symbol:S.sinaSymbol,limitPct: /^(sz30|sh68)/.test(S.sinaSymbol)?20:10,riskFreeRate:val('btRf',0)/100};
   }
   function params(key) {
     if(key==='mr')return {threshold:val('btThreshold',25),batches:val('btBatches',3),tp1:val('btTP1',50),tp2:val('btTP2',100),tp3:val('btTP3',150),stopLoss:val('btSL',30),smaPeriod:60};
@@ -204,6 +204,7 @@
     selectStock:(symbol,name)=>{if(!/^(sh|sz)\d{6}$/.test(symbol))throw new Error('请选择沪深A股');S.sinaSymbol=symbol;S.code=symbol.slice(2);S.name=name||S.code;S.mktNum=symbol.startsWith('sh')?'1':'0';S.secid=S.mktNum+'.'+S.code;S.marketType='A';return load();},
     backtest,renderPlan,copyPlan,load,
     runPortfolio:async spec=>{
+      if(spec.accounting==='ledger')return StockLedgerAdapter.run(spec,getBars);
       const barsBySymbol={},adjust=spec.mode==='shares'?'raw':'qfq';
       for(let i=0;i<spec.assets.length;i+=3)await Promise.all(spec.assets.slice(i,i+3).map(async a=>{barsBySymbol[a.symbol]=await getBars(a.symbol,warmStart(spec.start),spec.end,adjust);}));
       const r=StockPortfolio.calculate({...spec,barsBySymbol,executionOptions:{...spec.feeOptions,lotSize:100}});
@@ -222,7 +223,7 @@
   window.runBacktest=backtest;window.generateOrderPlan=renderPlan;window.copyOrderPlan=copyPlan;
   window.autoFillGridParams=async()=>{toast('参数请在独立滚动验证的训练期选择；历史网格基准使用评价起点价格。');};
   function controls(){
-    document.getElementById('btRun').insertAdjacentHTML('beforebegin',`<div class="audit-form" id="executionSettings"><label>开始日期<input type="date" id="btStart"></label><label>结束日期<input type="date" id="btEnd"></label><label>模拟本金（元）<input type="number" id="btCash" min="100" value="1000000"></label><label>佣金率（%）<input type="number" id="btCommission" min="0" step="0.001" value="0.03"></label><label>最低佣金（元/笔）<input type="number" id="btMinFee" min="0" step="1" value="5"></label><label>卖出印花税（%）<input type="number" id="btTax" min="0" step="0.001" value="0.05"></label><label>滑点（万分之一）<input type="number" id="btSlip" min="0" value="5"></label><label>无风险年收益假设（%）<input type="number" id="btRf" min="0" value="0" step="0.1"></label><label>比较基准<select id="btBenchmark"><option value="sh000300">沪深300</option><option value="sh000001">上证指数</option><option value="sh000905">中证500</option><option value="sh000852">中证1000</option></select></label></div><p class="audit-note">费用为可编辑假设，请按券商和历史时期调整。本版模拟沪深股票；不含分红现金、送转股事件或跨市场税费。</p>`);
+    document.getElementById('btRun').insertAdjacentHTML('beforebegin',`<div class="audit-form" id="executionSettings"><label>开始日期<input type="date" id="btStart"></label><label>结束日期<input type="date" id="btEnd"></label><label>模拟本金（元）<input type="number" id="btCash" min="100" value="1000000"></label><label>佣金率（%）<input type="number" id="btCommission" min="0" step="0.001" value="0.03"></label><label>最低佣金（元/笔）<input type="number" id="btMinFee" min="0" step="1" value="5"></label><label>卖出印花税（%）<input type="number" id="btTax" min="0" step="0.001" value="0.05"></label><label>滑点（万分之一）<input type="number" id="btSlip" min="0" value="5"></label><label>无风险年收益假设（%）<input type="number" id="btRf" min="0" value="0" step="0.1"></label><label>成交规则<select id="btRuleMode"><option value="fixed">固定假设</option><option value="historical">按日期与板块（普通 A 股）</option></select></label><label>比较基准<select id="btBenchmark"><option value="sh000300">沪深300</option><option value="sh000001">上证指数</option><option value="sh000905">中证500</option><option value="sh000852">中证1000</option></select></label></div><p class="audit-note">固定模式使用填写的费率；历史模式按成交日计算印花税、过户费和申报单位，佣金、滑点仍用填写值。普通股规则不能代替逐日风险警示或上市初期档案。本版模拟沪深股票；不含分红现金、送转股事件或跨市场税费。</p>`);
     const setDates=()=>{const d=datesForRange(document.getElementById('btPeriod').value||'1y');document.getElementById('btStart').value=d.start;document.getElementById('btEnd').value=d.end;};setDates();
     document.getElementById('btPeriod').addEventListener('change',()=>{setDates();S.range=document.getElementById('btPeriod').value;document.querySelectorAll('#rangeButtons button').forEach(b=>b.classList.toggle('active',b.dataset.range===S.range));load();});
     document.getElementById('gridBase').closest('.bt-field').innerHTML='<label>历史网格基准</label><p class="audit-note">自动取评价起点开盘价。真实平均持仓成本在条件单中填写。</p>';
@@ -238,6 +239,9 @@
     window.addEventListener('stock-workspace-change',renderPlan);
   }
   controls();
+  const initialSymbol=new URLSearchParams(location.search).get('symbol');
+  if(/^(sh|sz)\d{6}$/.test(initialSymbol||'')){S.sinaSymbol=initialSymbol;S.code=initialSymbol.slice(2);S.name=S.code;S.mktNum=initialSymbol.startsWith('sh')?'1':'0';S.secid=S.mktNum+'.'+S.code;S.marketType='A';}
+  window.StockHoldoutUI?.mount(document.getElementById('finalHoldout'),{getBars,publicMode:!!window.StockLocalWorkspace,getContext:()=>{const k=S.selectedStrategy||'mr';return {symbol:S.sinaSymbol,name:S.name,strategy:k,params:params(k),executionOptions:config()};}});
   window.StockWorkspace?.mount();
   load();
 })();

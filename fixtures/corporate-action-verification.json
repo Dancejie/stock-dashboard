@@ -1,0 +1,91 @@
+{
+  "asOf": "2026-11-10",
+  "scope": "issuer archive + original implementation-notice SHA-256; manual per-share extraction",
+  "books": [
+    {
+      "symbol": "sh603099",
+      "archiveStart": "2025-05-01",
+      "archiveEnd": "2025-07-02",
+      "issuerId": "9900022933",
+      "announcementCount": 20,
+      "candidatesForManualReview": [
+        {
+          "title": "长白山旅游股份有限公司2024年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-13/1223859419.PDF"
+        }
+      ],
+      "verifiedFiles": [
+        {
+          "id": "603099-2025-034",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-13/1223859419.PDF",
+          "bytes": 141148,
+          "sha256": "28bc070b18708912a8204bd135baf131118fd02ef386a592dc366f0b29f738b9"
+        }
+      ]
+    },
+    {
+      "symbol": "sh688556",
+      "archiveStart": "2025-05-01",
+      "archiveEnd": "2025-07-02",
+      "issuerId": "gfbj0834278",
+      "announcementCount": 22,
+      "candidatesForManualReview": [
+        {
+          "title": "关于实施2024年年度权益分派调整“高测转债”转股价格的公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935347.PDF"
+        },
+        {
+          "title": "2024年年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935346.PDF"
+        },
+        {
+          "title": "关于调整2024年度利润分配及资本公积转增股本方案每股分配比例及每股转增比例的公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935345.PDF"
+        },
+        {
+          "title": "关于实施2024年年度权益分派时可转债转股价格调整暨转股连续停牌的提示性公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-14/1223877566.PDF"
+        }
+      ],
+      "verifiedFiles": [
+        {
+          "id": "688556-2025-035",
+          "url": "https://static.cninfo.com.cn/finalpage/2025-06-20/1223935346.PDF",
+          "bytes": 128135,
+          "sha256": "5fecb694731d3a06d91daf2ad547f100cb40ec9e7d338ea741148999d60fc064"
+        }
+      ]
+    },
+    {
+      "symbol": "sz002780",
+      "archiveStart": "2026-04-01",
+      "archiveEnd": "2026-11-10",
+      "issuerId": "9900023789",
+      "announcementCount": 74,
+      "candidatesForManualReview": [
+        {
+          "title": "2026年半年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-15/1225564252.PDF"
+        },
+        {
+          "title": "2025年度权益分派实施公告",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-05-27/1225331603.PDF"
+        }
+      ],
+      "verifiedFiles": [
+        {
+          "id": "002780-2026-027",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-05-27/1225331603.PDF",
+          "bytes": 120457,
+          "sha256": "cf3a0c56eb175078d6a80e314451b4f8166e4c6dacb19ecb25b34e6bb7f9feb7"
+        },
+        {
+          "id": "002780-2026-048",
+          "url": "https://static.cninfo.com.cn/finalpage/2026-09-15/1225564252.PDF",
+          "bytes": 133820,
+          "sha256": "2b0d61b4ad2f812b1559d0a5764f67bc67bff3dac937729b7896d945625b67e7"
+        }
+      ]
+    }
+  ]
+}

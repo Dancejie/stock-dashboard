@@ -1,13 +1,13 @@
 (function (root, factory) {
   'use strict';
-  const api = factory();
+  const api = factory(() => typeof module==='object'&&module.exports ? require('./historical-rules.js') : root.StockHistoricalRules);
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.StockQuant = api;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (getHistoricalRules) {
   'use strict';
   const DEFAULTS = Object.freeze({ initialCash: 1000000, commissionRate: 0.0003,
     minCommission: 5, stampTaxRate: 0.0005, slippageBps: 5, lotSize: 100,
-    riskFreeRate: 0, limitPct: 10 });
+    riskFreeRate: 0, limitPct: 10, ruleMode:'fixed' });
   const STRATEGIES = Object.freeze(['hold', 'mr', 'turtle', 'ma', 'boll', 'td', 'grid', 'supertrend', 'tsmom', 'chandelier']);
   function number(value, fallback, name, min, max, integer) {
     const n = value == null ? fallback : Number(value);
@@ -18,6 +18,7 @@
   function normalize(strategy, input, options) {
     if (!STRATEGIES.includes(strategy)) throw new Error('Unknown strategy: ' + strategy);
     const o = Object.assign({}, DEFAULTS, options);
+    if(!['fixed','historical'].includes(o.ruleMode))throw Error('ruleMode 仅支持 fixed / historical');
     o.initialCash = number(o.initialCash, DEFAULTS.initialCash, 'initialCash', 0.01, 1e14);
     for (const k of ['commissionRate', 'stampTaxRate']) o[k] = number(o[k], DEFAULTS[k], k, 0, 0.1);
     o.minCommission = number(o.minCommission, 5, 'minCommission', 0, 1e8);
@@ -235,12 +236,33 @@
       }
       return orders;
   }
+  function ruleAt(o,day,bar) {
+    if(o.ruleMode!=='historical')return {buyMin:o.lotSize,buyStep:o.lotSize,sellMin:o.lotSize,sellStep:o.lotSize,buyMax:Infinity,sellMax:Infinity,transferFeeRate:0,stampTaxRate:o.stampTaxRate,limitPct:o.limitPct,warnings:[]};
+    const h=getHistoricalRules();if(!h)throw Error('历史规则模块未加载');
+    const ctx=Object.assign({},o.ruleContext||{},o.ruleContext?.byDate?.[day]||{});
+    for(const k of ['riskWarning','listingDate','listingTradeDay','specialStatus'])if(bar&&bar[k]!=null)ctx[k]=bar[k];
+    return h.resolve(o.symbol,day,ctx);
+  }
+  function buyQuantity(rule,cap,budget,price,fees) {
+    const step=rule.buyStep;
+    let lo=0,hi=Math.floor(Math.min(cap,budget/price,rule.buyMax)/step+1e-10);
+    while(lo<hi){const m=Math.ceil((lo+hi)/2),g=m*step*price;if(g+fees(g)<=budget+1e-8)lo=m;else hi=m-1;}
+    const qty=lo*step;return qty>=rule.buyMin?qty:0;
+  }
+  function sellQuantity(rule,request,available,liquidate,historical) {
+    if(historical)return getHistoricalRules().roundSell(rule,request,available);
+    const rounded=x=>Math.floor((x+1e-10)/rule.sellStep)*rule.sellStep;
+    return liquidate?Math.min(request,available):rounded(Math.min(rounded(request),available));
+  }
   function run(input, strategy, params, options) {
     const normalized = normalize(strategy, params || {}, options || {}), p = normalized.p, o = normalized.o;
     const data = prepare(input), close = data.map(d => d.close), warnings = [];
     function warn(message) { if (!warnings.includes(message)) warnings.push(message); }
     warn('日线信号在下一根可评价 K 线开盘撮合；挂单仅该日有效。滑点、涨跌停判断和复权资金账本属于简化模型，不代表实盘保证成交。');
-    warn('复权价格适合研究收益，未单独模拟分红现金、送转股及历史规则变化；实盘股数与条件价应使用真实价格和持仓。');
+    warn('单股策略研究不单独记分红现金及送转股；前复权日线的股数和绝对价位并非历史实盘账本。');
+    const historical=o.ruleMode==='historical';
+    if(historical)warn('历史规则依成交日计印花税和过户费；佣金视为含其他交易规费且不含过户费。税费按连续金额估算，未模拟券商分位舍入；开盘即在不利涨跌停边界时保守不成交。');
+    if(historical&&o.adjustment!=='raw')warn('复权日线仅以价格比例近似历史涨跌停，不能还原原始报价一分钱档位。');
     if (data.some(d => d.volume == null)) warn('部分数据缺少成交量，无法排除全部停牌或流动性不足情形。');
     if (strategy === 'td') warn('TD 使用本项目简化的 Setup/Countdown 规则，不包含完整商业 TD 指标规则。');
     if (strategy === 'turtle') warn('海龟仓位按 ATR 计算；十日低点退出及跳空不保证单笔损失受风险比例限制。');
@@ -253,6 +275,9 @@
     if (o.start != null) { if (!validDate(o.start)) throw new Error('start requires a valid YYYY-MM-DD date'); while (start <= end && data[start].time < o.start) start++; }
     if (o.end != null) { if (!validDate(o.end)) throw new Error('end requires a valid YYYY-MM-DD date'); while (end >= start && data[end].time > o.end) end--; }
     if (start > end) throw new Error('No bars in the evaluation interval');
+    if(historical&&start===0&&data[0].prevClose==null&&data[0].limitReferencePrice==null&&data[0].limitUp==null&&data[0].limitDown==null)warn('最早一根日线无前收或官方限制价，无法验证该日开盘涨跌停。');
+    const rulesByBar=data.map((b,i)=>i>=start&&i<=end?ruleAt(o,b.time,b):null);
+    for(const r of rulesByBar)if(r)for(const message of r.warnings)warn(message);
     let cash = o.initialCash, shares = 0, lots = [], cycle = null, cycleSeq = 0;
     const fills = [], trades = [], equity = [], skippedOrders = [];
     const state = { batchesBought: 0, tpHits: [false, false, false], base: p.base || data[start].open, pendingOrders: [],
@@ -263,14 +288,13 @@
     const td = strategy === 'td' ? tdSignals(data) : null;
     const atr = strategy === 'turtle' ? sma(data.map((b,i) => i ? Math.max(b.high - b.low, Math.abs(b.high - close[i-1]), Math.abs(b.low - close[i-1])) : b.high-b.low), p.atrPeriod) : null;
     let pending = [], holdPlaced = false;
-    const roundLot = qty => Math.floor((qty + 1e-10) / o.lotSize) * o.lotSize;
     const averageCost = () => shares ? lots.reduce((s,l) => s+l.cost,0)/shares : 0;
     const sellable = i => lots.filter(l => l.acquiredIndex < i).reduce((s,l) => s+l.qty,0);
     function commission(gross) { return gross > 0 ? Math.max(o.minCommission, gross * o.commissionRate) : 0; }
     function gridLevels() { return Array.from({length:p.gridDown+p.gridUp+1},(_,g)=>state.base*Math.pow(1+p.step/100,g-p.gridDown)); }
     function skip(order, b, reason) { skippedOrders.push({time:b.time, signalDate:order.signalDate, side:order.side, reason}); warn(reason); }
     function execute(order, i) {
-      const b = data[i];
+      const b = data[i],rule=rulesByBar[i];
       if (b.volume === 0) { skip(order,b,'成交量为零，当日委托不成交。'); return; }
       const prev = i ? data[i-1].close : null;
       const locked = Math.abs(b.high - b.low) <= Math.max(1e-8,b.close*1e-8);
@@ -278,42 +302,54 @@
       const down = prev && 1 - b.open / prev >= o.limitPct / 100 * 0.97;
       const explicitUp = b.limitUp != null && b.open >= Number(b.limitUp)-1e-8;
       const explicitDown = b.limitDown != null && b.open <= Number(b.limitDown)+1e-8;
-      if (locked && ((order.side === 'buy' && (up || explicitUp)) || (order.side === 'sell' && (down || explicitDown)))) {
+      let lower=null,upper=null;
+      if(historical){
+        // Native tick bands need a raw reference. With adjusted OHLC use proportional
+        // bounds only; a split/dividend ex-date needs the exchange's adjusted reference.
+        const ref=b.limitReferencePrice??b.prevClose??prev;
+        const bands=o.adjustment==='raw'||b.limitReferencePrice!=null?getHistoricalRules().priceBands(rule,ref):
+          {upper:rule.limitPct!=null&&ref!=null?ref*(1+rule.limitPct/100):null,lower:rule.limitPct!=null&&ref!=null?ref*(1-rule.limitPct/100):null};
+        upper=b.limitUp??bands.upper;lower=b.limitDown??bands.lower;
+        if((upper!=null&&b.open>upper+0.011)||(lower!=null&&b.open<lower-0.011)){
+          skip(order,b,'开盘价超出可推导涨跌停区间，可能缺少除权基准或特殊状态；未生成假设成交。');return;
+        }
+        if((order.side==='buy'&&upper!=null&&b.open>=upper-1e-8)||(order.side==='sell'&&lower!=null&&b.open<=lower+1e-8)){
+          skip(order,b,'历史规则：开盘已达不利涨跌停价，不假设排队能够成交。');return;
+        }
+      }else if (locked && ((order.side === 'buy' && (up || explicitUp)) || (order.side === 'sell' && (down || explicitDown)))) {
         skip(order,b,'一字涨跌停按保守模型拒绝不利方向成交；不同板块请配置 limitPct。'); return;
       }
-      const price = b.open * (1 + (order.side === 'buy' ? 1 : -1) * o.slippageBps / 10000);
+      const simulatedPrice = b.open * (1 + (order.side === 'buy' ? 1 : -1) * o.slippageBps / 10000);
+      const price=historical?Math.max(lower??0,Math.min(upper??Infinity,simulatedPrice)):simulatedPrice;
+      const extraFee=g=>g*rule.transferFeeRate;
       if (order.side === 'buy') {
         const budget = Math.min(cash, order.budget == null ? cash : order.budget);
-        let qty = roundLot(Math.min(order.qty == null ? Infinity : order.qty, budget / price));
-        // Binary search lot count makes minimum commissions affordable without
-        // per-lot loops when allocations are large.
-        let lo=0, hi=Math.max(0,Math.floor(qty/o.lotSize));
-        while(lo<hi) { const mid=Math.ceil((lo+hi)/2), g=mid*o.lotSize*price; if(g+commission(g)<=budget+1e-8)lo=mid;else hi=mid-1; }
-        qty=lo*o.lotSize;
+        const qty=buyQuantity(rule,order.qty??Infinity,budget,price,g=>commission(g)+extraFee(g));
         if (!qty) { skip(order,b,'可用资金不足一手及费用，买单未成交。'); return; }
-        const gross = qty*price, fee=commission(gross), cost=gross+fee;
+        const gross=qty*price,fee=commission(gross),transferFee=extraFee(gross),cost=gross+fee+transferFee;
         if (!cycle) cycle={id:++cycleSeq,entryDate:b.time,entrySignal:order.reason,boughtQty:0,soldQty:0,buyGross:0,buyCost:0,sellGross:0,sellNet:0,realizedProfit:0,fillIds:[]};
         cash-=cost; if(cash<0&&cash>-1e-7)cash=0; shares+=qty;
         lots.push({qty,cost,acquiredIndex:i,date:b.time,price});
         cycle.boughtQty+=qty;cycle.buyGross+=gross;cycle.buyCost+=cost;
-        const f={id:fills.length+1,cycleId:cycle.id,type:'buy',side:'buy',date:b.time,time:b.time,signalDate:order.signalDate,price,openPrice:b.open,qty,shares:qty,gross,commission:fee,stampTax:0,fees:fee,cashFlow:-cost,reason:order.reason};
+        const f={id:fills.length+1,cycleId:cycle.id,type:'buy',side:'buy',date:b.time,time:b.time,signalDate:order.signalDate,price,openPrice:b.open,qty,shares:qty,gross,commission:fee,transferFee,stampTax:0,fees:fee+transferFee,cashFlow:-cost,reason:order.reason};
+        if(historical)f.rule={board:rule.board,stampTaxRate:rule.stampTaxRate,transferFeeRate:rule.transferFeeRate,limitPct:rule.limitPct};
         fills.push(f);cycle.fillIds.push(f.id);
         if(strategy==='mr')state.batchesBought++;
         if(strategy==='chandelier') {state.entryDate=b.time;state.highestHigh=null;state.previousStop=null;state.stopUpdatedAt=null;}
         return;
       }
-      const available=sellable(i), requested=order.all?shares:roundLot(order.fraction != null?shares*order.fraction:order.qty);
-      let qty=Math.min(requested,available);
-      if(!order.all)qty=roundLot(qty);
+      const available=sellable(i), requested=order.all?shares:order.fraction != null?shares*order.fraction:order.qty;
+      const qty=sellQuantity(rule,requested,available,order.all,historical);
       if(qty<=0) { skip(order,b,'没有符合 T+1 规则的可卖数量，卖单未成交。');return; }
-      const gross=qty*price, fee=commission(gross), tax=gross*o.stampTaxRate, net=gross-fee-tax;
+      const gross=qty*price, fee=commission(gross), transferFee=extraFee(gross),tax=gross*rule.stampTaxRate, net=gross-fee-transferFee-tax;
       if(cash+net < -1e-8) {skip(order,b,'卖出价款与可用现金不足支付费用，卖单未成交。');return;}
       let remaining=qty,basis=0;
       for(const lot of lots) { if(lot.acquiredIndex>=i||!remaining)continue;const take=Math.min(lot.qty,remaining),allocated=lot.cost*take/lot.qty;lot.qty-=take;lot.cost-=allocated;remaining-=take;basis+=allocated; }
       lots=lots.filter(l=>l.qty>0);shares-=qty;cash+=net;
       const profit=net-basis;
       cycle.soldQty+=qty;cycle.sellGross+=gross;cycle.sellNet+=net;cycle.realizedProfit+=profit;
-      const f={id:fills.length+1,cycleId:cycle.id,type:'sell',side:'sell',date:b.time,time:b.time,signalDate:order.signalDate,price,openPrice:b.open,qty,shares:qty,gross,commission:fee,stampTax:tax,fees:fee+tax,cashFlow:net,costBasis:basis,profit,pnl:basis?profit/basis*100:0,reason:order.reason};
+      const f={id:fills.length+1,cycleId:cycle.id,type:'sell',side:'sell',date:b.time,time:b.time,signalDate:order.signalDate,price,openPrice:b.open,qty,shares:qty,gross,commission:fee,transferFee,stampTax:tax,fees:fee+tax+transferFee,cashFlow:net,costBasis:basis,profit,pnl:basis?profit/basis*100:0,reason:order.reason};
+      if(historical)f.rule={board:rule.board,stampTaxRate:rule.stampTaxRate,transferFeeRate:rule.transferFeeRate,limitPct:rule.limitPct};
       fills.push(f);cycle.fillIds.push(f.id);
       if(order.tpIndex!=null)state.tpHits[order.tpIndex]=true;
       if(strategy==='grid')state.base=shares?averageCost():price;
@@ -327,7 +363,7 @@
       }
     }
     function signal(i) {
-      return signalOrders(data,strategy,p,Object.assign({},state,{shares,cash,avgCost:averageCost()}),o.initialCash,o.lotSize,i,start,Object.assign({allSMA,maShort,maLong,atr,td,close},advanced));
+      return signalOrders(data,strategy,p,Object.assign({},state,{shares,cash,avgCost:averageCost()}),o.initialCash,(rulesByBar[i]||rulesByBar[start]).buyMin,i,start,Object.assign({allSMA,maShort,maLong,atr,td,close},advanced));
     }
 
     // The last pre-start close may prepare the first evaluation day's order,
@@ -397,21 +433,23 @@
       state.previousStop=number(position.previousStop,NaN,'上一跟踪止损线',0,state.highestHigh);
       updateChandelier(state,last,cache.wilderATR[i],p);
     }
-    const rawOrders=signalOrders(data,strategy,p,state,capital,o.lotSize,i,0,cache);
-    const fees=g=>g?Math.max(o.minCommission,g*o.commissionRate):0,round=n=>Math.floor((n+1e-10)/o.lotSize)*o.lotSize;
+    const ruleDate=o.executionDate||last.time;
+    if(o.executionDate!=null&&o.executionDate<=last.time)throw Error('拟执行日须晚于已确认收盘日');
+    const rule=ruleAt(o,ruleDate,ruleDate===last.time?last:null);
+    const rawOrders=signalOrders(data,strategy,p,state,capital,rule.buyMin,i,0,cache);
+    const fees=g=>g?Math.max(o.minCommission,g*o.commissionRate)+g*rule.transferFeeRate:0;
+    const round=n=>Math.floor((n+1e-10)/rule.buyStep)*rule.buyStep;
     let remainingCash=cash,remainingShares=shares,remainingSellable=available;
     const orders=rawOrders.map(order=>{
       const referencePrice=last.close*(1+(order.side==='buy'?1:-1)*o.slippageBps/10000);
       if(order.side==='buy') {
         const budget=Math.min(remainingCash,order.budget==null?remainingCash:order.budget);
-        let lo=0,hi=Math.floor(Math.min(order.qty==null?Infinity:order.qty,budget/referencePrice)/o.lotSize);
-        while(lo<hi) {const m=Math.ceil((lo+hi)/2),g=m*o.lotSize*referencePrice;if(g+fees(g)<=budget+1e-8)lo=m;else hi=m-1;}
-        const qty=lo*o.lotSize,gross=qty*referencePrice,reserve=gross+fees(gross);remainingCash-=reserve;
+        const qty=buyQuantity(rule,order.qty??Infinity,budget,referencePrice,fees),gross=qty*referencePrice,reserve=gross+fees(gross);remainingCash-=reserve;
         return Object.assign({},order,{qty,enabled:qty>0,budget,quantityCap:order.qty==null?null:round(order.qty),referencePrice,referenceCash:reserve,quantityRule:'开盘按该档剩余预算、真实开盘价及费用重新向下取整，并受策略数量上限限制；此处不是保证成交股数'});
       }
-      const requested=order.all?remainingShares:round(order.fraction!=null?remainingShares*order.fraction:order.qty);
-      let qty=Math.min(requested,remainingSellable);if(!order.all)qty=round(qty);
-      const gross=qty*referencePrice,net=gross-fees(gross)-gross*o.stampTaxRate;
+      const requested=order.all?remainingShares:order.fraction!=null?remainingShares*order.fraction:order.qty;
+      let qty=sellQuantity(rule,requested,remainingSellable,order.all,o.ruleMode==='historical');
+      const gross=qty*referencePrice,net=gross-fees(gross)-gross*rule.stampTaxRate;
       if(remainingCash+net < -1e-8)qty=0;
       remainingShares-=qty;remainingSellable-=qty;
       return Object.assign({},order,{qty,enabled:qty>0,sellableCap:qty,referencePrice,referenceCash:qty?net:0,quantityRule:'执行前重新核对券商可卖数量；各阶段顺序扣减，不能重复占用同一持仓'});
@@ -445,6 +483,7 @@
       '股数按最新已完成收盘价及费用估算；开盘跳空后必须重新校验预算、可卖数量及成交条件。当前可卖数量作为保守上限，不预支次日解禁数量。',
       '执行日是信号日之后的第一个交易日；若其开盘已过，该开盘计划已过期，不能自动顺延或追单。每次成交或持仓变化后重新生成。',
       '平均成本、持仓与策略阶段来自手动录入，不能由历史回测推断；如果网格基准刚刚修改，应从修改后的新日线开始观察，不追溯执行旧穿越。'];
+    if(o.ruleMode==='historical')warnings.push(...rule.warnings,'参考费率与申报单位按 '+ruleDate+' 规则试算；实际委托前按真实执行日重新核对。');
     if(strategy==='supertrend')warnings.push('这是经典趋势指标的可解释执行版本，不是收益最优证明；震荡市场可能反复翻转。');
     if(strategy==='tsmom')warnings.push('本版本是单标的仅做多动量与入场波动定仓改编，不复现 AQR 2012 多资产期货/远期的原论文组合；目标波动不是持仓期间实际波动保证。');
     if(strategy==='chandelier')warnings.push(p.entryPeriod+'日突破入场与本轮最高价、只收紧吊灯退出是本项目组合改编。风控比例是数量估算，不能保证收盘退出或跳空时的实际最大亏损；手填最高价与止损线须与当前价格采用相同复权单位。');

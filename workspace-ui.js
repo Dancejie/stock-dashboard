@@ -49,7 +49,7 @@
     return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
   function validatePortfolio(item) {
-    const errors = [];
+    const errors = global.StockLedgerAdapter?.validate(item) || [];
     if (!String(item.name || '').trim()) errors.push('请填写组合名称。');
     if (typeof item.name !== 'string' || item.name.length > 80) errors.push('组合名称最多 80 个字符。');
     if (!['allocation', 'shares'].includes(item.mode)) errors.push('请选择组合分配方式。');
@@ -138,26 +138,28 @@
   function portfolioHTML() {
     const item = selectedPortfolio(), allocation = item.mode === 'allocation', fees = effectiveFees(item);
     const errors = validatePortfolio(item), weight = item.assets.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
+    const ledger = item.accounting === 'ledger', reweight = ledger && !allocation && (item.rebalance || 'none') !== 'none';
     const selectedIsSaved = state.data.portfolios.some(row => row.id === item.id);
-    return `<div class="sw-section-head"><div><h3>组合回测</h3><p>保存多套配置，在同一日期区间比较股票与策略。权重模式模拟策略成交，固定股数模式计算持仓估值变化。</p></div><div class="sw-actions"><button data-action="new-portfolio">＋ 新建组合</button>${selectedIsSaved ? '<button data-action="delete-portfolio">删除当前配置</button>' : '<button data-action="discard-draft">放弃空草稿</button>'}</div></div>
+    return `<div class="sw-section-head"><div><h3>组合回测</h3><p>保存多套配置，在同一日期区间比较股票与策略。权重模式模拟策略成交，固定股数模式计算持仓估值变化。</p></div><div class="sw-actions"><button data-action="sample-ledger">分红送转示例</button><button data-action="new-portfolio">＋ 新建组合</button>${selectedIsSaved ? '<button data-action="delete-portfolio">删除当前配置</button>' : '<button data-action="discard-draft">放弃空草稿</button>'}</div></div>
       ${!selectedIsSaved ? '<p class="sw-note sw-draft-note">这是空组合草稿。添加股票后才能保存；它不会阻止自选与持仓的保存。</p>' : ''}<div class="sw-config-picker"><label class="sw-field"><span>已保存 / 编辑中的配置</span><select data-config="activeId" aria-label="选择组合配置">${state.data.portfolios.map(row => `<option value="${esc(row.id)}" ${row.id === item.id ? 'selected' : ''}>${esc(row.name)}</option>`).join('')}${!selectedIsSaved ? `<option value="${esc(item.id)}" selected>新组合（未保存）</option>` : ''}</select></label><span class="sw-badge">${allocation ? '权重分配' : '固定股数'} · ${item.assets.length} 只</span></div>
       <div class="sw-config-grid">${input('组合名称', 'type="text" maxlength="80" data-portfolio="name"', item.name)}
-        <label class="sw-field"><span>组合方式</span><select data-portfolio="mode"><option value="allocation" ${allocation ? 'selected' : ''}>按权重分配本金</option><option value="shares" ${!allocation ? 'selected' : ''}>已有固定股数 + 额外现金</option></select></label>
+        ${global.StockLedgerAdapter?.controls(item)||''}<label class="sw-field"><span>组合方式</span><select data-portfolio="mode"><option value="allocation" ${allocation ? 'selected' : ''}>按权重分配本金</option><option value="shares" ${!allocation ? 'selected' : ''}>已有固定股数 + 额外现金</option></select></label>
         ${input(allocation ? '总本金（元）' : '持仓之外的额外现金（元）', 'type="number" min="0" step="100" inputmode="decimal" data-portfolio="initialCash"', item.initialCash)}
         ${input('开始日期', 'type="date" data-portfolio="start"', item.start)}${input('结束日期', 'type="date" data-portfolio="end"', item.end)}
       </div>
-      <p class="sw-note" id="sw-allocation-note">${allocation ? `股票初始权重合计 ${fmt(weight)}%，未分配的 ${fmt(Math.max(0, 100 - weight))}% 留作现金。策略在各自资金内运行；策略参数独立于单股面板，新增股票使用模型默认参数。` : '初始组合资产 = 共同起点的持仓市值 + 额外现金。历史收益从回测起点计算，不使用上方填写的实际成本。固定股数不运行策略、不模拟买卖费用。'}</p>
-      <div class="sw-assets-head"><h4>组合股票</h4><div class="sw-actions"><select id="sw-add-symbol" aria-label="从自选选择组合股票"><option value="">从自选加入…</option>${state.data.watchlist.filter(row => !item.assets.some(asset => asset.symbol === row.symbol)).map(row => `<option value="${esc(row.symbol)}">${esc(row.name || row.symbol)} · ${esc(row.symbol)}</option>`).join('')}</select><button data-action="add-watch-asset">添加</button><button data-action="add-current-asset">＋ 当前股票</button></div></div>
+      <p class="sw-note" id="sw-allocation-note">${ledger ? '采用不复权价格。登记日收盘确认权益，除权记应收，到账再记现金。期初份额视为可卖；按目标权重调仓时先卖后买，未分配的资金保留现金。' : allocation ? `股票初始权重合计 ${fmt(weight)}%，未分配的 ${fmt(Math.max(0, 100 - weight))}% 留作现金。策略在各自资金内运行；策略参数独立于单股面板，新增股票使用模型默认参数。` : '初始组合资产 = 共同起点的持仓市值 + 额外现金。历史收益从回测起点计算，不使用上方填写的实际成本。固定股数不运行策略、不模拟买卖费用。'}</p>
+      ${global.StockLedgerAdapter?.bookInfo(item)||''}<div class="sw-assets-head"><h4>组合股票</h4><div class="sw-actions"><select id="sw-add-symbol" aria-label="从自选选择组合股票"><option value="">从自选加入…</option>${state.data.watchlist.filter(row => !item.assets.some(asset => asset.symbol === row.symbol)).map(row => `<option value="${esc(row.symbol)}">${esc(row.name || row.symbol)} · ${esc(row.symbol)}</option>`).join('')}</select><button data-action="add-watch-asset">添加</button><button data-action="add-current-asset">＋ 当前股票</button></div></div>
       ${item.assets.length ? `<div class="sw-asset-list">${item.assets.map((asset, index) => `<article class="sw-asset-row"><div class="sw-stock-name"><strong>${esc(asset.name || asset.symbol)}</strong><span>${esc(asset.symbol)}</span></div>
         ${input(allocation ? '初始权重（%）' : '起始股数', `type="number" min="0" step="${allocation ? '0.1' : '1'}" inputmode="decimal" data-asset="${index}" data-field="${allocation ? 'weight' : 'quantity'}" aria-label="${esc(asset.name)}${allocation ? '权重' : '股数'}"`, allocation ? asset.weight ?? '' : asset.quantity ?? '')}
-        <label class="sw-field"><span>${allocation ? '独立策略配置' : '固定股数估值'}</span><select data-asset="${index}" data-field="strategy" aria-label="${esc(asset.name)}运行策略" ${allocation ? '' : 'disabled'}>${!allocation ? '<option value="fixed-shares" selected>固定持有（不运行策略）</option>' : ''}${Object.entries(STRATEGIES).map(([key, label]) => `<option value="${key}" ${allocation && (asset.strategy || 'hold') === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
+        ${reweight ? input('目标权重（%）', `type="number" min="0" max="100" step="0.1" data-asset="${index}" data-field="weight" aria-label="${esc(asset.name)}目标权重"`,asset.weight??'') : ''}
+        <label class="sw-field"><span>${ledger ? '持有 / 定期调仓' : allocation ? '独立策略配置' : '固定股数估值'}</span><select data-asset="${index}" data-field="strategy" aria-label="${esc(asset.name)}运行策略" ${allocation && !ledger ? '' : 'disabled'}>${ledger ? '<option value="ledger" selected>持仓账本</option>' : !allocation ? '<option value="fixed-shares" selected>固定持有（不运行策略）</option>' : ''}${Object.entries(STRATEGIES).map(([key, label]) => `<option value="${key}" ${allocation && !ledger && (asset.strategy || 'hold') === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
         <button class="sw-remove" data-action="remove-asset" data-index="${index}" aria-label="从组合移除${esc(asset.name || asset.symbol)}">移除</button>
-        ${allocation ? `<p class="sw-asset-params">${esc(strategySummary(asset))}</p>` : ''}</article>`).join('')}</div>` : '<div class="sw-empty sw-empty-small">添加股票后，填写权重或股数即可计算。默认采用买入持有。</div>'}
-      ${allocation ? '<p class="sw-note">每只股票的组合参数独立保存，不跟随单股回测面板变化。切换策略会载入该策略默认参数；已有配置显示并保留其已保存参数。新增三种策略仅供研究，默认值未证明对 A 股有效。</p>' : ''}
-      <details class="sw-fees" ${allocation ? '' : 'hidden'}><summary>成交费用与滑点</summary><div class="sw-fee-grid">
+        ${allocation && !ledger ? `<p class="sw-asset-params">${esc(strategySummary(asset))}</p>` : ''}</article>`).join('')}</div>` : '<div class="sw-empty sw-empty-small">添加股票后，填写权重或股数即可计算。默认采用买入持有。</div>'}
+      ${allocation && !ledger ? '<p class="sw-note">每只股票的组合参数独立保存，不跟随单股回测面板变化。切换策略会载入该策略默认参数；已有配置显示并保留其已保存参数。新增三种策略仅供研究，默认值未证明对 A 股有效。</p>' : ''}
+      <details class="sw-fees" ${allocation || ledger ? '' : 'hidden'}><summary>成交费用与滑点</summary><div class="sw-fee-grid">
         ${input('佣金费率（%）', 'type="number" min="0" max="5" step="0.001" data-fee="commissionRate"', (fees.commissionRate ?? FEE_DEFAULTS.commissionRate) * 100)}
         ${input('每笔最低佣金（元）', 'type="number" min="0" max="10000" step="0.1" data-fee="minCommission"', fees.minCommission ?? 5)}
-        ${input('卖出印花税（%）', 'type="number" min="0" max="5" step="0.001" data-fee="stampTaxRate"', (fees.stampTaxRate ?? 0.0005) * 100)}
+        ${ledger ? '<p class="sw-note">印花税、过户费按成交日规则计取。</p>' : input('卖出印花税（%）', 'type="number" min="0" max="5" step="0.001" data-fee="stampTaxRate"', (fees.stampTaxRate ?? 0.0005) * 100)}
         ${input('单边滑点（基点）', 'type="number" min="0" max="1000" step="1" data-fee="slippageBps"', fees.slippageBps ?? 5)}
       </div><p class="sw-note">1 基点 = 0.01%。这些是模拟假设，可按实际券商费率调整。非 A 股的交易规则需要对应市场的执行模型。</p></details>
       <div class="sw-run-row"><button class="sw-primary" data-action="run" ${errors.length || state.calculating ? 'disabled' : ''}>${state.calculating ? '组合计算中…' : '计算组合表现'}</button><span>编辑会清除旧结果；计算成功后仍需「保存更改」保存配置。</span></div>
@@ -180,11 +182,11 @@
     const adjustment = meta.adjustment || meta.adjust || result.adjustment || (item.mode === 'shares' ? '不复权价格 · 固定股数估值' : '前复权价格 · 策略成交模拟');
     const value = (row, keys) => { for (const key of keys) if (row[key] != null) return row[key]; return null; };
     const notices = [...(Array.isArray(result.notices) ? result.notices : []), ...(Array.isArray(result.caveats) ? result.caveats : result.caveats ? [result.caveats] : [])];
-    return `<section class="sw-result"><div class="sw-metrics">${[['区间收益', metrics.totalReturn], ['年化收益', metrics.annualized ?? metrics.annualizedReturn], ['最大回撤', metrics.maxDrawdown]].map(([label, amount]) => `<div><span>${label}</span><strong class="${label === '最大回撤' ? '' : tone(amount)}">${pct(amount)}</strong></div>`).join('')}</div>
+    return `<section class="sw-result"><div class="sw-metrics">${[['区间收益', metrics.totalReturn], ['年化收益', item.accounting==='ledger' && (result.equity||[]).length<60 ? null : (metrics.annualized ?? metrics.annualizedReturn)], ['最大回撤', metrics.maxDrawdown]].map(([label, amount]) => `<div><span>${label}</span><strong class="${label === '最大回撤' ? '' : tone(amount)}">${pct(amount)}</strong></div>`).join('')}</div>
       <p class="sw-note">实际共同区间：${esc(meta.start || result.actualStart || result.start || item.start)} 至 ${esc(meta.end || result.actualEnd || result.end || item.end)}（请求 ${esc(result.requestedStart || item.start)} 至 ${esc(result.requestedEnd || item.end)}）<br>期初总资产 ${fmt(result.initialNAV ?? result.initialValue)} 元 · 期末总资产 ${fmt(result.finalNAV ?? result.finalValue)} 元 · ${item.mode === 'shares' ? '额外现金' : '本金'} ${fmt(item.initialCash)} 元<br>${esc(adjustment)}</p>
-      ${chartHTML(result)}
+      ${chartHTML(result)}${item.accounting==='ledger' ? global.StockLedgerAdapter.resultHTML(result) : ''}
       ${rows.length ? `<h4>各股票的贡献</h4><div class="sw-table-wrap"><table><thead><tr><th>股票</th><th>起始资产</th><th>期末资产</th><th>区间盈亏</th><th>区间收益</th><th>组合贡献</th></tr></thead><tbody>${rows.map(row => { const profit = value(row, ['profit', 'pnl', 'totalProfit']), ret = value(row, ['returnPct', 'totalReturn', 'return']); return `<tr><td>${esc(row.name || row.symbol)}<small>${esc(row.symbol || '')}</small></td><td>${fmt(value(row, ['initialValue', 'initialEquity', 'initialCapital', 'initialNAV']))}</td><td>${fmt(value(row, ['finalValue', 'finalEquity', 'finalCapital', 'finalNAV']))}</td><td class="${tone(profit)}">${fmt(profit)}</td><td class="${tone(ret)}">${pct(ret)}</td><td>${pct(value(row, ['contributionPct', 'contribution', 'contributionPercent']))}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
-      <p class="sw-note">历史回测收益不等于实际账户收益。复权数据用于连续价格与信号分析；实际成本、分红到账、成交价格和数量需按真实账户核对。</p>
+      <p class="sw-note">${item.accounting==='ledger'?'按不复权价格和权益账本计算；不足60个交易日不显示年化收益。分红为税前，投资者实际税费与券商成交可能不同。':'历史回测收益不等于实际账户收益。复权数据用于连续价格与信号分析；实际成本、分红到账、成交价格和数量需按真实账户核对。'}</p>
       ${notices.length ? `<details class="sw-result-notes" open><summary>本次回测说明</summary><ul>${notices.map(notice => `<li>${esc(typeof notice === 'string' ? notice : notice.message || JSON.stringify(notice))}</li>`).join('')}</ul></details>` : ''}</section>`;
   }
   function render() {
@@ -208,7 +210,7 @@
       run.disabled = state.calculating || state.loading || state.saving || !!errors.length;
       run.textContent = state.calculating ? '组合计算中…' : '计算组合表现';
       const target = state.root.querySelector('#sw-portfolio-validation'); if (target) target.innerHTML = errors.slice(0, 4).map(error => `<p>${esc(error)}</p>`).join('');
-      const note = state.root.querySelector('#sw-allocation-note'); if (note && item.mode === 'allocation') { const weight = item.assets.reduce((sum, row) => sum + (Number(row.weight) || 0), 0); note.textContent = `股票初始权重合计 ${fmt(weight)}%，未分配的 ${fmt(Math.max(0, 100 - weight))}% 留作现金。策略在各自资金内运行；策略参数独立于单股面板，新增股票使用模型默认参数。`; }
+      const note = state.root.querySelector('#sw-allocation-note'); if (note && item.mode === 'allocation' && item.accounting !== 'ledger') { const weight = item.assets.reduce((sum, row) => sum + (Number(row.weight) || 0), 0); note.textContent = `股票初始权重合计 ${fmt(weight)}%，未分配的 ${fmt(Math.max(0, 100 - weight))}% 留作现金。策略在各自资金内运行；策略参数独立于单股面板，新增股票使用模型默认参数。`; }
     }
   }
   async function request(method, body) {
@@ -308,6 +310,15 @@
     if (action === 'refresh-quotes') return refreshQuotes();
     if (action === 'select-stock') { const item = state.data.watchlist[Number(button.dataset.index)]; try { await adapter().selectStock(item.symbol, item.name); } catch (error) { state.error = error.message || '切换股票失败。'; updateStatus(); } return; }
     if (action === 'remove-watch') { state.data.watchlist.splice(Number(button.dataset.index), 1); markDirty(); render(); return; }
+    if(action==='sample-ledger') {
+      if(state.data.portfolios.length>=30){state.error='组合数量已达上限。';updateStatus();return;}
+      const item=global.StockLedgerAdapter.sample(makeId()); state.data.portfolios.push(item);state.activeId=item.id;markDirty();render();return;
+    }
+    if(action==='download-book'){
+      const b=global.StockCorporateActions.getBook('sh603099','2025-06-16','2025-07-02');
+      const url=URL.createObjectURL(new Blob([JSON.stringify(b,null,2)],{type:'application/json'}));
+      const a=document.createElement('a');a.href=url;a.download='公告账本示例.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1500);return;
+    }
     if (action === 'new-portfolio') { if (state.activeId === state.temporary?.id && !state.data.portfolios.some(item => item.id === state.activeId)) { state.notice = '请先为当前空草稿添加股票，或放弃它。'; updateStatus(); return; } state.temporary = newPortfolio(); state.activeId = state.temporary.id; state.result = null; state.runToken++; state.calculating = false; render(); return; }
     if (action === 'discard-draft') { state.temporary = null; state.activeId = state.data.portfolios[0]?.id || null; state.result = null; state.runToken++; state.calculating = false; render(); return; }
     if (action === 'delete-portfolio') { const item = selectedPortfolio(); state.data.portfolios = state.data.portfolios.filter(row => row.id !== item.id); state.activeId = state.data.portfolios[0]?.id || null; state.temporary = null; markDirty(); render(); return; }
@@ -325,14 +336,22 @@
   }
   function onChange(event) {
     const target = event.target; if (!state.data || state.saving || state.loading) return;
+    if(target.hasAttribute?.('data-book-import')){
+      if(event.type!=='change'||!target.files?.length)return;
+      const item=editablePortfolio(),file=target.files[0];if(file.size>90000){state.error='最多导入 90 KB。';updateStatus();return;}
+      file.text().then(t=>{const parsed=global.StockLedgerAdapter.parseBooks(t);if(selectedPortfolio().id!==item.id)return;
+        const next={...(item.actionBooks||{}),...parsed};if(JSON.stringify(next).length>90000)throw Error('本组合账本超过 90 KB。');
+        item.actionBooks=next;markDirty();render();}).catch(e=>{state.error='导入失败：'+e.message;updateStatus();});return;
+    }
     if (target.dataset.config === 'activeId') { if (event.type !== 'change') return; state.activeId = target.value; state.result = null; state.runToken++; state.calculating = false; render(); return; }
     if (target.dataset.watch != null) { const index = Number(target.dataset.watch), item = state.data.watchlist[index]; const value = number(target.value); if (value == null) delete item[target.dataset.field]; else item[target.dataset.field] = value; markDirty(); updateHoldingPreview(index); return; }
     if (target.dataset.portfolio) {
       const item = editablePortfolio(), key = target.dataset.portfolio;
-      if (key === 'mode' && event.type !== 'change') return;
+      if (['mode','accounting','rebalance'].includes(key) && event.type !== 'change') return;
       item[key] = key === 'initialCash' ? number(target.value) : target.value;
       if (key === 'mode') item.initialCash = target.value === 'shares' ? 0 : 1000000;
-      markDirty(); if (key === 'mode') render(); return;
+      if(key==='accounting' && item.accounting==='ledger' && item.assets.some(a=>a.strategy && a.strategy!=='hold')){item.accounting='research';markDirty();render();state.error='请先将组合内的技术策略改为买入持有，再切换到持仓账本。';updateStatus();return;}
+      markDirty(); if (['mode','accounting','rebalance'].includes(key)) render(); return;
     }
     if (target.dataset.asset != null) { const item = editablePortfolio().assets[Number(target.dataset.asset)], key = target.dataset.field; if (key === 'strategy' && event.type !== 'change') return; item[key] = key === 'strategy' ? target.value : number(target.value); if (key === 'strategy') item.params = { ...(STRATEGY_DEFAULTS[target.value] || {}) }; markDirty(); if (key === 'strategy') render(); return; }
     if (target.dataset.fee) { const item = editablePortfolio(), key = target.dataset.fee; item.feeOptions ||= {}; const value = number(target.value); item.feeOptions[key] = value == null ? undefined : ['commissionRate', 'stampTaxRate'].includes(key) ? value / 100 : value; markDirty(); }

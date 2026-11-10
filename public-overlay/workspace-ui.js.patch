@@ -1,0 +1,86 @@
+--- workspace-ui.js
++++ workspace-ui.js
+@@ -1,5 +1,6 @@
+ (function (global) {
+   'use strict';
++  const navChart = global.StockResponsiveChart || (typeof module !== 'undefined' && module.exports ? require('./responsive-chart.js') : null);
+ 
+   const STRATEGIES = { hold: '买入持有', mr: '均值回归', ma: '双均线', turtle: '海龟突破', boll: '布林带', td: 'TD 序列', grid: '网格', supertrend: '超级趋势', tsmom: '波动率约束动量', chandelier: '突破 + 吊灯跟踪止损' };
+   const STRATEGY_DEFAULTS = {
+@@ -170,13 +171,9 @@
+     const series = (result.equity || result.nav || []).map(row => ({ time: row.time || row.date, value: Number(row.value ?? row.equity ?? row.nav) })).filter(row => Number.isFinite(row.value));
+     if (series.length < 2 || !(series[0].value > 0)) return '<p class="sw-note">净值序列不足，暂不绘图。</p>';
+     const initial = Number(result.initialEquity ?? result.initialNAV ?? result.initialValue) || series[0].value;
+-    const values = series.map(row => row.value / initial), low = Math.min(...values, 1), high = Math.max(...values, 1), padding = Math.max((high - low) * 0.12, 0.01), min = low - padding, max = high + padding;
+-    const left = 62, right = 886, top = 20, bottom = 190;
+-    const x = index => left + (right - left) * index / (values.length - 1), y = value => bottom - (value - min) / (max - min) * (bottom - top);
+-    const points = values.map((value, index) => `${x(index).toFixed(2)},${y(value).toFixed(2)}`).join(' ');
+-    const grid = [0, 1, 2, 3].map(index => { const value = min + (max - min) * index / 3, py = y(value); return `<line x1="${left}" y1="${py}" x2="${right}" y2="${py}" stroke="currentColor" opacity=".12"/><text x="${left - 9}" y="${py + 4}" text-anchor="end">${value.toFixed(3)}</text>`; }).join('');
+-    return `<figure class="sw-chart"><figcaption>组合净值 <span>起点 = 1.000</span></figcaption><svg viewBox="0 0 910 230" role="img" aria-label="组合净值从 ${esc(series[0].time)} 到 ${esc(series[series.length - 1].time)}，期末 ${values[values.length - 1].toFixed(3)}"><title>组合净值曲线</title>${grid}<line x1="${left}" y1="${y(1)}" x2="${right}" y2="${y(1)}" stroke="currentColor" stroke-dasharray="4 5" opacity=".35"/><polyline points="${points}" fill="none" stroke="#C9A84C" stroke-width="2.5" vector-effect="non-scaling-stroke"/><text x="${left}" y="218">${esc(series[0].time)}</text><text x="${right}" y="218" text-anchor="end">${esc(series[series.length - 1].time)}</text></svg></figure>`;
+-  }
++    return navChart ? navChart.html(series, { initialValue: initial, title: '组合净值', className: 'sw-chart' }) : '<p class="sw-note">图表模块加载失败，请刷新重试。</p>';
++  }
++
+   function resultHTML(result, item) {
+     const metrics = result.metrics || result, rows = result.perAsset || result.contributions || result.components || [], meta = result.meta || {};
+     const adjustment = meta.adjustment || meta.adjust || result.adjustment || (item.mode === 'shares' ? '不复权价格 · 固定股数估值' : '前复权价格 · 策略成交模拟');
+@@ -185,7 +182,7 @@
+     return `<section class="sw-result"><div class="sw-metrics">${[['区间收益', metrics.totalReturn], ['年化收益', item.accounting==='ledger' && (result.equity||[]).length<60 ? null : (metrics.annualized ?? metrics.annualizedReturn)], ['最大回撤', metrics.maxDrawdown]].map(([label, amount]) => `<div><span>${label}</span><strong class="${label === '最大回撤' ? '' : tone(amount)}">${pct(amount)}</strong></div>`).join('')}</div>
+       <p class="sw-note">实际共同区间：${esc(meta.start || result.actualStart || result.start || item.start)} 至 ${esc(meta.end || result.actualEnd || result.end || item.end)}（请求 ${esc(result.requestedStart || item.start)} 至 ${esc(result.requestedEnd || item.end)}）<br>期初总资产 ${fmt(result.initialNAV ?? result.initialValue)} 元 · 期末总资产 ${fmt(result.finalNAV ?? result.finalValue)} 元 · ${item.mode === 'shares' ? '额外现金' : '本金'} ${fmt(item.initialCash)} 元<br>${esc(adjustment)}</p>
+       ${chartHTML(result)}${item.accounting==='ledger' ? global.StockLedgerAdapter.resultHTML(result) : ''}
+-      ${rows.length ? `<h4>各股票的贡献</h4><div class="sw-table-wrap"><table><thead><tr><th>股票</th><th>起始资产</th><th>期末资产</th><th>区间盈亏</th><th>区间收益</th><th>组合贡献</th></tr></thead><tbody>${rows.map(row => { const profit = value(row, ['profit', 'pnl', 'totalProfit']), ret = value(row, ['returnPct', 'totalReturn', 'return']); return `<tr><td>${esc(row.name || row.symbol)}<small>${esc(row.symbol || '')}</small></td><td>${fmt(value(row, ['initialValue', 'initialEquity', 'initialCapital', 'initialNAV']))}</td><td>${fmt(value(row, ['finalValue', 'finalEquity', 'finalCapital', 'finalNAV']))}</td><td class="${tone(profit)}">${fmt(profit)}</td><td class="${tone(ret)}">${pct(ret)}</td><td>${pct(value(row, ['contributionPct', 'contribution', 'contributionPercent']))}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
++      ${rows.length ? `<h4>各股票的贡献</h4><p class="sw-note table-scroll-hint">左右滑动查看全部指标</p><div class="sw-table-wrap" role="region" aria-label="各股票的贡献，可横向滚动" tabindex="0"><table><thead><tr><th scope="col">股票</th><th scope="col">起始资产</th><th scope="col">期末资产</th><th scope="col">区间盈亏</th><th scope="col">区间收益</th><th scope="col">组合贡献</th></tr></thead><tbody>${rows.map(row => { const profit = value(row, ['profit', 'pnl', 'totalProfit']), ret = value(row, ['returnPct', 'totalReturn', 'return']); return `<tr><td data-label="股票">${esc(row.name || row.symbol)}<small>${esc(row.symbol || '')}</small></td><td data-label="起始资产">${fmt(value(row, ['initialValue', 'initialEquity', 'initialCapital', 'initialNAV']))}</td><td data-label="期末资产">${fmt(value(row, ['finalValue', 'finalEquity', 'finalCapital', 'finalNAV']))}</td><td data-label="区间盈亏" class="${tone(profit)}">${fmt(profit)}</td><td data-label="区间收益" class="${tone(ret)}">${pct(ret)}</td><td data-label="组合贡献">${pct(value(row, ['contributionPct', 'contribution', 'contributionPercent']))}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
+       <p class="sw-note">${item.accounting==='ledger'?'按不复权价格和权益账本计算；不足60个交易日不显示年化收益。分红为税前，投资者实际税费与券商成交可能不同。':'历史回测收益不等于实际账户收益。复权数据用于连续价格与信号分析；实际成本、分红到账、成交价格和数量需按真实账户核对。'}</p>
+       ${notices.length ? `<details class="sw-result-notes" open><summary>本次回测说明</summary><ul>${notices.map(notice => `<li>${esc(typeof notice === 'string' ? notice : notice.message || JSON.stringify(notice))}</li>`).join('')}</ul></details>` : ''}</section>`;
+   }
+@@ -196,14 +193,15 @@
+       <div id="sw-alert" role="alert" aria-live="polite"></div>
+       <div id="sw-panel" class="sw-panel" role="tabpanel" aria-labelledby="sw-tab-${state.tab}" ${state.expanded ? '' : 'hidden'}>${state.loading && !state.data ? '<div class="sw-empty">正在加载你的自选与组合…</div>' : !state.data ? '<div class="sw-empty">工作台尚未加载。<button data-action="reload">重新加载</button></div>' : `<fieldset class="sw-editor" ${busy ? 'disabled' : ''}>${state.tab === 'watchlist' ? watchlistHTML() : portfolioHTML()}</fieldset>`}</div>`;
+     updateStatus();
++    navChart?.hydrate(state.root);
+   }
+   function updateStatus() {
+     if (!state.root) return;
+     const status = state.root.querySelector('#sw-save-state'), save = state.root.querySelector('[data-action="save"]'), alert = state.root.querySelector('#sw-alert');
+     const errors = state.data ? validateWorkspace(state.data) : [];
+-    if (status) status.textContent = state.loading ? '加载中…' : state.saving ? '保存中…' : state.conflict ? '存在版本冲突' : state.dirty ? '有未保存更改' : state.data ? (state.activeId === state.temporary?.id && !state.data.portfolios.some(item => item.id === state.activeId) ? '空组合草稿待添加股票' : '已保存到工作台') : '尚未连接';
++    if (status) status.textContent = state.loading ? '加载中…' : state.saving ? '保存中…' : state.conflict ? '存在版本冲突' : state.dirty ? '有未保存更改' : state.data ? (state.activeId === state.temporary?.id && !state.data.portfolios.some(item => item.id === state.activeId) ? '空组合草稿待添加股票' : '已保存到本机') : '尚未加载';
+     if (save) { save.disabled = !state.data || !state.dirty || state.loading || state.saving || state.conflict || !!errors.length; save.title = errors[0] || ''; }
+-    if (alert) alert.innerHTML = state.conflict ? '<div class="sw-alert sw-alert-warning">其他页面已更新此工作台。你的本页修改仍保留，请核对后重新加载。<button data-action="reload-conflict">加载服务器版本（放弃本页修改）</button></div>' : state.error ? `<div class="sw-alert">${esc(state.error)}${!state.data ? ' <button data-action="reload">重试</button>' : ''}</div>` : state.notice ? `<div class="sw-alert sw-alert-note">${esc(state.notice)}</div>` : state.dirty && errors.length ? `<div class="sw-alert sw-alert-warning">${esc(errors[0])}</div>` : '';
++    if (alert) alert.innerHTML = state.conflict ? '<div class="sw-alert sw-alert-warning">其他页面已更新此工作台。你的本页修改仍保留，请核对后重新加载。<button data-action="reload-conflict">加载本机最新版本（放弃本页修改）</button></div>' : state.error ? `<div class="sw-alert">${esc(state.error)}${!state.data ? ' <button data-action="reload">重试</button>' : ''}</div>` : state.notice ? `<div class="sw-alert sw-alert-note">${esc(state.notice)}</div>` : state.dirty && errors.length ? `<div class="sw-alert sw-alert-warning">${esc(errors[0])}</div>` : '';
+     const run = state.root.querySelector('[data-action="run"]');
+     if (run) {
+       const item = selectedPortfolio(), errors = validatePortfolio(item);
+@@ -213,18 +211,16 @@
+       const note = state.root.querySelector('#sw-allocation-note'); if (note && item.mode === 'allocation' && item.accounting !== 'ledger') { const weight = item.assets.reduce((sum, row) => sum + (Number(row.weight) || 0), 0); note.textContent = `股票初始权重合计 ${fmt(weight)}%，未分配的 ${fmt(Math.max(0, 100 - weight))}% 留作现金。策略在各自资金内运行；策略参数独立于单股面板，新增股票使用模型默认参数。`; }
+     }
+   }
++  let localWorkspace;
+   async function request(method, body) {
+-    const response = await global.fetch('/api/workspace', { method, credentials: 'same-origin', headers: { Accept: 'application/json', ...(body ? { 'Content-Type': 'application/json' } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+-    let payload; try { payload = await response.json(); } catch { payload = {}; }
+-    if (!response.ok) { const error = new Error((typeof payload.detail === 'string' ? payload.detail : '') || payload.message || payload.error || (response.status === 401 ? '请登录后加载工作台。' : `工作台请求失败（${response.status}）。`)); error.status = response.status; throw error; }
+-    const data = payload.workspace || payload;
+-    if (!Array.isArray(data.watchlist) || !Array.isArray(data.portfolios) || data.version == null) throw new Error('工作台返回格式异常，请稍后重新加载。');
+-    return data;
++    if (!global.StockLocalWorkspace) throw new Error('本机保存模块尚未加载，请刷新页面后重试。');
++    if (!localWorkspace) localWorkspace = global.StockLocalWorkspace.create({ validate: validateWorkspace });
++    return localWorkspace.request(method, body);
+   }
+   function emitChange(source) { global.dispatchEvent(new CustomEvent('stock-workspace-change', { detail: { source, version: state.saved.version, workspace: clone(state.saved) } })); }
+   async function reload(options) {
+     if (state.loading || state.saving) return;
+-    if (state.dirty && !options?.discard) { state.error = '本页有未保存修改。请先保存，或使用「加载服务器版本（放弃本页修改）」。'; state.conflict = true; updateStatus(); return; }
++    if (state.dirty && !options?.discard) { state.error = '本页有未保存修改。请先保存，或使用「加载本机最新版本（放弃本页修改）」。'; state.conflict = true; updateStatus(); return; }
+     state.loading = true; state.error = ''; render();
+     try {
+       const data = await request('GET');
+@@ -239,7 +235,7 @@
+     state.saving = true; state.error = ''; render();
+     try {
+       const data = await request('PUT', workspacePayload(state.data));
+-      state.data = clone(data); state.saved = clone(data); state.dirty = false; state.notice = state.activeId === state.temporary?.id && !data.portfolios.some(item => item.id === state.activeId) ? '已保存自选、持仓和完整组合配置；当前空组合草稿还需添加股票。' : '已保存自选、持仓和组合配置。'; emitChange('save');
++      state.data = clone(data); state.saved = clone(data); state.dirty = false; state.notice = state.activeId === state.temporary?.id && !data.portfolios.some(item => item.id === state.activeId) ? '已保存到本机；当前空组合草稿还需添加股票。' : '自选、手填持仓和组合已保存到本机。'; emitChange('save');
+     } catch (error) { if (error.status === 409) state.conflict = true; else state.error = error.message; }
+     finally { state.saving = false; render(); }
+   }

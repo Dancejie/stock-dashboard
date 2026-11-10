@@ -962,6 +962,7 @@ body {
 
         <div class="bt-results" id="btResults"></div>
         <div id="btEquityChartWrap"></div>
+        <section id="finalHoldout" aria-label="封存与留出验证"></section>
       </div>
     </div>
   </main>
@@ -2075,7 +2076,13 @@ $('#btRun').addEventListener('click', () => window.StockApp.backtest());
 // ═══════════════════════════════════════════════════════════════
 
 </script>
+<script src="./historical-rules.js"></script>
+<script src="./corporate-actions.js"></script>
 <script src="./quant-core.js"></script>
+<script src="./portfolio-ledger.js"></script>
+<script src="./ledger-adapter.js"></script>
+<script src="./holdout.js"></script>
+<script src="./holdout-ui.js"></script>
 <script src="./portfolio-engine.js"></script>
 <script src="./workspace-ui.js"></script>
 <script src="./market-client.js"></script>

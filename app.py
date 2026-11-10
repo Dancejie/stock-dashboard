@@ -19,7 +19,7 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from init_db import SCHEMA, load_db_props
 
-VERSION = '2026.09.15-strategies.4'
+VERSION = '2026.11.10-ledger.1'
 ROOT = Path(__file__).resolve().parent
 CN = ZoneInfo('Asia/Shanghai')
 SYMBOL = re.compile(r'^(sh|sz)\d{6}$')
@@ -157,7 +157,30 @@ def validate_workspace(body):
         for key, upper in [('commissionRate', .05), ('minCommission', 10000), ('stampTaxRate', .05), ('slippageBps', 1000)]:
             if key in fees:
                 safe_fees[key] = _number(fees[key], key, high=upper)
-        out_ports.append({'id': pid, 'name': _name(row.get('name'), '未命名组合'), 'mode': mode,
+        accounting = row.get('accounting', 'research')
+        cadence = row.get('rebalance', 'none')
+        if accounting not in ['research', 'ledger'] or cadence not in ['none', 'monthly', 'quarterly']:
+            raise HTTPException(422, '收益口径或调仓频率无效')
+        extra = {}
+        if 'accounting' in row or 'rebalance' in row:
+            extra.update(accounting=accounting, rebalance=cadence)
+        if accounting == 'ledger':
+            if any(a['strategy'] != 'hold' for a in checked):
+                raise HTTPException(422, '持仓账本支持买入持有和目标权重调仓')
+            if cadence != 'none' and (min(a['weight'] for a in checked) <= 0 or sum(a['weight'] for a in checked) > 100 + 1e-8):
+                raise HTTPException(422, '调仓目标权重应为正且总和不超过100%')
+        books = row.get('actionBooks')
+        if books is not None:
+            if not isinstance(books, dict) or len(books)>20 or len(json.dumps(books,ensure_ascii=False))>90000:
+                raise HTTPException(422, '导入的公司行为账本数目或大小超限')
+            for symbol, book in books.items():
+                if (not isinstance(book,dict) or not SYMBOL.fullmatch(symbol) or book.get('symbol') != symbol
+                    or not isinstance(book.get('events'),list) or len(book['events'])>500
+                    or not isinstance(book.get('source'),str) or not book['source'].startswith('https://')):
+                    raise HTTPException(422, '导入的公司行为账本格式无效')
+                _dates(book.get('coverageStart'),book.get('coverageEnd'),max_years=100)
+            extra['actionBooks']=books
+        out_ports.append({**extra, 'id': pid, 'name': _name(row.get('name'), '未命名组合'), 'mode': mode,
             'initialCash': _number(row.get('initialCash'), '资金', low=0 if mode == 'shares' else .01),
             'start': start.isoformat(), 'end': end.isoformat(), 'assets': checked, 'feeOptions': safe_fees})
     return {'version': int(version), 'watchlist': out_watch, 'portfolios': out_ports}
@@ -347,6 +370,6 @@ def index(decrypted_userinfo: Optional[str] = Header(None, alias='Decrypted-User
 
 @app.get('/{asset}')
 def asset_file(asset: str):
-    if asset not in ['market-client.js','market-search.js','lightweight-charts-4.1.7.js','quant-core.js','portfolio-engine.js','workspace-ui.js','workspace-ui.css','dashboard-upgrade.js','dashboard-upgrade.css']:
+    if asset not in ['corporate-actions.js','historical-rules.js','portfolio-ledger.js','ledger-adapter.js','holdout.js','holdout-ui.js','market-client.js','market-search.js','lightweight-charts-4.1.7.js','quant-core.js','portfolio-engine.js','workspace-ui.js','workspace-ui.css','dashboard-upgrade.js','dashboard-upgrade.css']:
         raise HTTPException(404)
     return FileResponse(ROOT/asset, headers={'Cache-Control':'no-cache'})
